@@ -1,0 +1,465 @@
+/*
+* Copyright 2019 Kaloom, Inc.  All rights reserved.
+*    Licensed under the Apache License, Version 2.0 (the "License"); you may
+*    not use this file except in compliance with the License. You may obtain
+*    a copy of the License at
+*
+*         http://www.apache.org/licenses/LICENSE-2.0
+*
+*    Unless required by applicable law or agreed to in writing, software
+*    distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+*    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+*    License for the specific language governing permissions and limitations
+*    under the License.
+*/
+syntax = "proto3";
+
+package kvs.pb;
+import "error.proto";
+import "ports.proto";
+
+message GetVersionRequest { }
+
+message GetVersionResponse {
+    Error error = 1;
+    uint32 Version = 2;
+}
+
+/**
+ * L2NetworkID: L2 network identifier (VNI or the Kaloom Network ID).
+ * Timeout: Aging time for the network in seconds. Deafult: 300
+ */
+message CreateL2NetworkRequest {
+    oneof L2NetworkID {
+        uint32 VNI = 1;
+        uint64 Knid = 2;
+    }
+    uint32 Timeout = 3;
+}
+
+message CreateL2NetworkResponse {
+    Error error = 1;
+}
+
+/**
+ * L2NetworkID: L2 network identifier (VNI or the Kaloom Network ID).
+ */
+message DeleteL2NetworkRequest {
+    oneof L2NetworkID {
+        uint32 VNI = 1;
+        uint64 Knid = 2;
+    }
+}
+
+message DeleteL2NetworkResponse {
+    Error error = 1;
+}
+
+message GetL2NetworksRequest { }
+
+/**
+ * Knid: Kaloom Network ID, virtual network identifier.
+ */
+message GetL2NetworksResponse {
+    Error error = 1;
+    message L2Network {
+        uint64 Knid = 1;
+    }
+    repeated L2Network L2Networks = 2;
+}
+
+/**
+ * PortType: Type of the port to be created.
+ * For more information, look in ports.proto
+ */
+message AddPortRequest {
+    PortType Type = 1;
+}
+
+message AddPortResponse {
+    Error error = 1;
+    uint64 PortID = 2;
+}
+
+message PortConfiguration {
+    /* Set to 00:00:00:00:00:00 to keep the current MAC address */
+    bytes MACAddress = 1;
+
+    /* Set to 0 to keep the current MTU */
+    uint32 MTU = 2;
+
+    /* Set to AdminStateDefault to keep the current admin state */
+    AdminStateEnum AdminState = 3;
+    
+}
+
+message ConfigurePortRequest {
+    uint64 PortID = 1;
+    PortConfiguration Conf = 2;
+
+}
+
+message ConfigurePortResponse {
+    Error error = 1;
+}
+
+/**
+ * PortID: ID of an existing port
+ * VlanID: Used to attach a VLAN to an L2 network. 0 is used for the untagged case.
+ * L2NetworkID: L2 network identifier (VNI or the Kaloom Network ID).
+ */
+message AttachPortToL2NetworkRequest {
+    uint64 PortID = 1;
+    uint32 VlanID = 4;
+    oneof L2NetworkID {
+        uint32 VNI = 2;
+        uint64 Knid = 3;
+    }
+}
+
+message AttachPortToL2NetworkResponse {
+    Error error = 1;
+}
+
+message DetachPortFromL2NetworkRequest {
+    uint64 PortID = 1;
+    uint32 VlanID = 2;
+}
+
+message DetachPortFromL2NetworkResponse {
+    Error error = 1;
+}
+
+/**
+ * PortType: Type of the port to be created.
+ * For more information, look in ports.proto
+ */
+message GetPortIDRequest {
+    PortType Type = 1;
+}
+
+message GetPortIDResponse {
+    Error error = 1;
+    uint64 PortID = 2;
+}
+
+message GetPortsRequest { }
+
+message GetPortsResponse {
+    Error error = 1;
+    repeated Port Ports = 2;
+}
+
+message ClearAllMacEntriesRequest { }
+
+message ClearAllMacEntriesResponse {
+    Error error = 1;
+}
+
+message DeletePortRequest {
+    uint64 PortID = 1;
+}
+message DeletePortResponse {
+    Error error = 1;
+}
+
+/**
+ * L2NetworkID: L2 network identifier (VNI or the Kaloom Network ID).
+ */
+message GetAttachedPortsRequest {
+    oneof L2NetworkID {
+        uint32 VNI = 1;
+        uint64 Knid = 2;
+    }
+}
+
+message GetAttachedPortsResponse {
+    Error error = 1;
+    repeated Port Ports = 2;
+}
+
+/**
+ * L2NetworkID: L2 network identifier (VNI or the Kaloom Network ID).
+ */
+message NumAttachedPortsRequest {
+    oneof L2NetworkID {
+        uint32 VNI = 1;
+        uint64 Knid = 2;
+    }
+}
+
+message NumAttachedPortsResponse {
+    Error error = 1;
+    uint64 count = 2;
+}
+
+/**
+ * IPAddress: Source IP for the encapsulated packet
+ * PortID: ID of the port for creating the KTEP
+ */
+message CreateKTEPRequest {
+    bytes IPAddress = 1;
+    uint64 PortID = 2;
+}
+
+message CreateKTEPResponse {
+    Error error = 1;
+}
+
+/**
+ * PortID: Port ID of the KTEP.
+ * DestinationMAC: Destination MAC address for encapsulated packet.
+ * DestinationIP: Destination IP address for encapsulated packet.
+ * SourceIP: Source IP for encapsulated packet.
+ */
+message ConfigureKTEPRequest {
+    uint64 PortID = 1;
+    message KTEPConfig {
+        bytes DestinationMAC = 1;
+        bytes DestinationIP = 2;
+        bytes SourceIP = 3;
+    }
+    KTEPConfig config = 2;
+}
+
+message ConfigureKTEPResponse {
+    Error error = 1;
+}
+
+message DeleteKTEPRequest {
+    uint64 PortID = 1;
+}
+
+message DeleteKTEPResponse {
+    Error error = 1;
+}
+
+message AddConnectionRequest {
+    uint64 PortID = 1;
+    uint64 PeerPortID = 2;
+}
+
+message AddConnectionResponse {
+    Error error = 1;
+}
+
+message DeleteConnectionRequest {
+    uint64 PortID = 1;
+    uint64 PeerPortID = 2;
+}
+
+message DeleteConnectionResponse {
+    Error error = 1;
+}
+
+message GetConnectionsRequest {}
+
+message GetConnectionsResponse {
+    Error error = 1;
+    message Connection {
+        Port Port1 = 1;
+        Port Port2 = 2;
+    }
+    repeated Connection Connections = 2;
+}
+
+message ConfigureMACLearningRequest {
+    bool enable = 1;
+}
+
+message ConfigureMACLearningResponse {
+    Error error = 1;
+}
+
+/**
+ * Knid: Kaloom Network ID, virtual network identifier.
+ * IPAddress: IP address of the participating node in the virtual network.
+ */
+message AddParticipatingNodeRequest {
+    uint64 Knid = 1;
+    bytes IPAddress = 2;
+}
+
+message AddParticipatingNodeResponse {
+    Error error = 1;
+}
+
+/**
+ * Knid: Kaloom Network ID, virtual network identifier.
+ * IPAddress: IP address of the participating node in the virtual network.
+ */
+message RemoveParticipatingNodeRequest {
+    uint64 Knid = 1;
+    bytes IPAddress = 2;
+}
+
+message RemoveParticipatingNodeResponse {
+    Error error = 1;
+}
+
+message GetParticipatingNodesRequest {
+    uint64 Knid = 1;
+}
+
+message GetParticipatingNodesResponse {
+    Error error = 1;
+    message ParticipatingNode {
+        bytes IPAddress = 1;
+    }
+    repeated ParticipatingNode Nodes = 2;
+}
+
+/**
+ * Knid: Kaloom Network ID, virtual network identifier.
+ */
+message NumParticipatingNodesRequest {
+    uint64 Knid = 1;
+}
+
+message NumParticipatingNodesResponse {
+    Error error = 1;
+    uint64 count = 2;
+}
+
+/**
+ * L2NetworkID: L2 network identifier (VNI or the Kaloom Network ID).
+ * MACAddress: MAC address entry for the local interface.
+ * PortID: KVS port ID for the local interface.
+ * VlanID: VLAN ID for the local interface. 0 is used for the untagged case.
+ */
+message AddStaticLocalIfaceMacEntryRequest {
+    oneof L2NetworkID {
+        uint32 VNI = 1;
+        uint64 Knid = 2;
+    }
+    bytes MACAddress = 3;
+    uint64 PortID = 4;
+    uint32 VlanID = 5;
+}
+
+message AddStaticLocalIfaceMacEntryResponse {
+    Error error = 1;
+}
+
+/**
+ * Knid: Kaloom Network ID, virtual network identifier.
+ * MACAddress: MAC address entry for the participating node.
+ * IPAddress: IP address entry for the participating node.
+ */
+message AddStaticParticipatingNodeMacEntryRequest {
+    uint64 Knid = 1;
+    bytes MACAddress = 2;
+    bytes IPAddress = 3;
+}
+
+message AddStaticParticipatingNodeMacEntryResponse {
+    Error error = 1;
+}
+
+/**
+ * Knid: Kaloom Network ID, virtual network identifier.
+ * MACAddress: Broadcast MAC address entry.
+ */
+message AddStaticBroadcastMacEntryRequest {
+    oneof L2NetworkID {
+        uint32 VNI = 1;
+        uint64 Knid = 2;
+    }
+    bytes MACAddress = 3;
+}
+
+message AddStaticBroadcastMacEntryResponse {
+    Error error = 1;
+}
+
+message DeleteStaticMacEntryRequest {
+    oneof L2NetworkID {
+        uint32 VNI = 1;
+        uint64 Knid = 2;
+    }
+    bytes MACAddress = 3;
+}
+
+message DeleteStaticMacEntryResponse {
+    Error error = 1;
+}
+
+message ClearMacEntriesRequest {
+    oneof L2NetworkID {
+        uint32 VNI = 1;
+        uint64 Knid = 2;
+    }
+}
+
+message ClearMacEntriesResponse {
+    Error error = 1;
+}
+
+message JoinRequest {
+    uint64 PortID = 1;
+    uint32 Timeout = 2;
+    uint32 NumRetries = 3;
+}
+
+message JoinResponse {
+    Error error = 1;
+}
+
+/**
+ * PortID: Port for sending the leave request
+ */
+message LeaveRequest {
+    uint64 PortID = 1;
+}
+
+message LeaveResponse {
+    Error error = 1;
+}
+
+message LeaveAllRequest { }
+
+message LeaveAllResponse {
+    Error error = 1;
+}
+
+message AntiSpoofingRule {
+    bytes MACAddress = 1;
+    bytes IP = 2;
+}
+
+message AddAntiSpoofingRuleRequest {
+    uint64 PortID = 1;
+    AntiSpoofingRule Rule = 2;
+}
+
+message AddAntiSpoofingRuleResponse {
+    Error error = 1;
+}
+
+message DeleteAntiSpoofingRuleRequest {
+    uint64 PortID = 1;
+    AntiSpoofingRule Rule = 2;
+}
+
+message DeleteAntiSpoofingRuleResponse {
+    Error error = 1;
+}
+
+message GetAntiSpoofingRulesRequest {
+    uint64 PortID = 1;
+}
+
+message GetAntiSpoofingRulesResponse {
+    Error error = 1;
+    repeated AntiSpoofingRule Rules = 2;
+}
+
+message SetRXQueuePMDAffinityRequest {
+    uint64 PortID = 1;
+    uint32 QueueID = 2;
+    uint32 CoreID = 3;
+}
+
+message SetRXQueuePMDAffinityResponse {
+    Error error = 1;
+}

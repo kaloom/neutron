@@ -1,0 +1,208 @@
+/*
+* Copyright 2019 Kaloom, Inc.  All rights reserved.
+*    Licensed under the Apache License, Version 2.0 (the "License"); you may
+*    not use this file except in compliance with the License. You may obtain
+*    a copy of the License at
+*
+*         http://www.apache.org/licenses/LICENSE-2.0
+*
+*    Unless required by applicable law or agreed to in writing, software
+*    distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+*    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+*    License for the specific language governing permissions and limitations
+*    under the License.
+*/
+syntax = "proto3";
+
+package kvs.pb;
+import "kvs_msg.proto";
+
+service kvs {
+/**
+ * GetVersion returns the KVS version.
+ */
+rpc GetVersion(GetVersionRequest) returns (GetVersionResponse);
+
+/**
+ * CreateL2Network creates a L2 network identified using a KNID.
+ */
+rpc CreateL2Network(CreateL2NetworkRequest) returns (CreateL2NetworkResponse);
+
+/**
+ * DeleteL2Network removes the L2 network with the provided KNID.
+ */
+rpc DeleteL2Network(DeleteL2NetworkRequest) returns (DeleteL2NetworkResponse);
+
+/**
+ * GetL2Networks returns an list of all L2 network identifiers.
+ */
+rpc GetL2Networks(GetL2NetworksRequest) returns (GetL2NetworksResponse);
+
+/**
+ * AddPort creates a port and returns the port ID.
+ */
+rpc AddPort(AddPortRequest) returns (AddPortResponse);
+
+/**
+ * ConfigurePort updates the configuration (e.g. MAC, MTU, admin state) of a port
+ */
+rpc ConfigurePort(ConfigurePortRequest) returns (ConfigurePortResponse);
+
+/**
+ * AttachPortToL2Network attaches the port to a L2 network.
+ */
+rpc AttachPortToL2Network(AttachPortToL2NetworkRequest) returns (AttachPortToL2NetworkResponse);
+
+/**
+ * DetachPortFromL2Network detaches the port from the L2 network.
+ */
+rpc DetachPortFromL2Network(DetachPortFromL2NetworkRequest) returns (DetachPortFromL2NetworkResponse);
+
+/**
+ * GetPortID returns the ID of a port with the provided config.
+ */
+rpc GetPortID(GetPortIDRequest) returns (GetPortIDResponse);
+
+/**
+ * DeletePort deletes the port with the given port ID.
+ */
+rpc DeletePort(DeletePortRequest) returns (DeletePortResponse);
+
+/**
+ * GetPorts returns a list of all ports.
+ */
+rpc GetPorts(GetPortsRequest) returns (GetPortsResponse);
+
+/**
+ * GetAttachedPorts returns a list of all the ports attached to a L2 network.
+ */
+rpc GetAttachedPorts(GetAttachedPortsRequest) returns (GetAttachedPortsResponse);
+
+/**
+ * NumAttachedPorts returns the number of ports attached to a L2 network.
+ */
+rpc NumAttachedPorts(NumAttachedPortsRequest) returns (NumAttachedPortsResponse);
+
+/**
+ * CreateKTEP creates a KNF tunnel endpoint for transporting packets over the
+ * Kaloom fabric.
+ */
+rpc CreateKTEP(CreateKTEPRequest) returns (CreateKTEPResponse);
+
+/**
+ * DeleteKTEP deletes a KTEP.
+ */
+rpc DeleteKTEP(DeleteKTEPRequest) returns (DeleteKTEPResponse);
+
+/**
+ * ConfigureKTEP configures the KTEP.
+ */
+rpc ConfigureKTEP(ConfigureKTEPRequest) returns (ConfigureKTEPResponse);
+
+/**
+ * AddConnection connects two KVS ports. These ports canot be attached to an L2
+ * network. One of the ports may belong to a KTEP for transporting packets over
+ * the Kaloom fabric.
+ */
+rpc AddConnection(AddConnectionRequest) returns (AddConnectionResponse);
+
+/**
+ * DeleteConnection removes a connection between the two given ports.
+ */
+rpc DeleteConnection(DeleteConnectionRequest) returns (DeleteConnectionResponse);
+
+/**
+ * GetConnections returns all connections in KVS
+ */
+rpc GetConnections(GetConnectionsRequest) returns (GetConnectionsResponse);
+
+/**
+ * ConfigureMACLearning is used to enable or disable MAC learning.
+ */
+rpc ConfigureMACLearning(ConfigureMACLearningRequest) returns (ConfigureMACLearningResponse);
+
+/**
+ * AddParticipatingNode adds a participating node to a L2 network.
+ */
+rpc AddParticipatingNode(AddParticipatingNodeRequest) returns (AddParticipatingNodeResponse);
+
+/**
+ * RemoveParticipatingNode removes a participating node from a L2 network.
+ */
+rpc RemoveParticipatingNode(RemoveParticipatingNodeRequest) returns (RemoveParticipatingNodeResponse);
+
+/**
+ * GetParticipatingNodes returns an list of all participating nodes in a L2 network.
+ */
+rpc GetParticipatingNodes(GetParticipatingNodesRequest) returns (GetParticipatingNodesResponse);
+
+/**
+ * NumParticipatingNodes returns the number of participating nodes in a L2 network.
+ */
+rpc NumParticipatingNodes(NumParticipatingNodesRequest) returns (NumParticipatingNodesResponse);
+
+/**
+ * AddStaticLocalIfaceMacEntry adds a static MAC entry for a local interface in a L2 network.
+ */
+rpc AddStaticLocalIfaceMacEntry(AddStaticLocalIfaceMacEntryRequest) returns (AddStaticLocalIfaceMacEntryResponse);
+
+/**
+ * AddStaticParticipatingNodeMacEntry adds a static MAC entry for a participating node in a L2 network.
+ */
+rpc AddStaticParticipatingNodeMacEntry(AddStaticParticipatingNodeMacEntryRequest) returns (AddStaticParticipatingNodeMacEntryResponse);
+
+/**
+ * AddStaticBroadcastMacEntry adds a static MAC entry for broadcasting to a L2 network.
+ */
+rpc AddStaticBroadcastMacEntry(AddStaticBroadcastMacEntryRequest) returns (AddStaticBroadcastMacEntryResponse);
+
+/**
+ * DeleteStaticMacEntry deletes a static MAC entry.
+ */
+rpc DeleteStaticMacEntry(DeleteStaticMacEntryRequest) returns (DeleteStaticMacEntryResponse);
+
+/**
+ * ClearMacEntries deletes all MAC entries in a given L2 network.
+ */
+rpc ClearMacEntries(ClearMacEntriesRequest) returns (ClearMacEntriesResponse);
+
+/**
+ * ClearAllMacEntries deletes all MAC entries in the KVS instance.
+ */
+rpc ClearAllMacEntries(ClearAllMacEntriesRequest) returns (ClearAllMacEntriesResponse);
+
+/**
+ * Join add the KVS instance to a virtual fabric.
+ */
+rpc Join(JoinRequest) returns (JoinResponse);
+
+/**
+ * Leave sends a request on a port which joins KVS to the fabric.
+ */
+rpc Leave(LeaveRequest) returns (LeaveResponse);
+
+/**
+ * LeaveAll sends a leave request on all ports which join KVS to the fabric.
+ */
+rpc LeaveAll(LeaveAllRequest) returns (LeaveAllResponse);
+
+/**
+ * AddAntiSpoofingRule adds an anti-spoofing rule (MAC-IP pair) to a port.
+ */
+rpc AddAntiSpoofingRule(AddAntiSpoofingRuleRequest) returns (AddAntiSpoofingRuleResponse);
+
+/**
+ * DeleteAntiSpoofingRule deletes an anti-spoofing rule (MAC-IP pair) from a port.
+ */
+rpc DeleteAntiSpoofingRule(DeleteAntiSpoofingRuleRequest) returns (DeleteAntiSpoofingRuleResponse);
+
+/**
+ * GetAntiSpoofingRules fetchs the list of anti-spoofing rules for a given port.
+ */
+rpc GetAntiSpoofingRules(GetAntiSpoofingRulesRequest) returns (GetAntiSpoofingRulesResponse);
+
+/**
+ * SetRXQueuePMDAffinity pins the PMD thread that polls the given queue to a specific core
+ */
+rpc SetRXQueuePMDAffinity(SetRXQueuePMDAffinityRequest) returns (SetRXQueuePMDAffinityResponse);
+}

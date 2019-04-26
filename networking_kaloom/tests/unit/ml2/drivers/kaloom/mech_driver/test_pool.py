@@ -30,7 +30,7 @@ class TestKaloomVlanPool(base.BaseTestCase):
         KaloomKnidMapping.__table__.create(bind=engine)
         KaloomVlanHostMapping.__table__.create(bind=engine)
         KaloomVlanReservation.__table__.create(bind=engine)
-        with patch.object(KaloomVlanPool, '_parse_network_vlan_ranges', return_value=(2,4)):
+        with patch.object(KaloomVlanPool, '_parse_network_vlan_ranges', return_value=(2,4094)):
              self.pool = KaloomVlanPool()
 
     def tearDown(self):
@@ -42,17 +42,14 @@ class TestKaloomVlanPool(base.BaseTestCase):
         KaloomVlanReservation.__table__.drop(bind=engine)
 
     def test_allocate_local_vlan(self):
-        available = range(2,5)
         kaloom_db.create_vlan_reservation = MagicMock()
         host_1 = 'fake_host_1'
         network_1 = 'fake_network_1'
         kaloom_db.get_all_vlan_mappings_for_host = MagicMock(return_value=[])
         local_vlan_id = self.pool.allocate_local_vlan(host_1, network_1)
-        self.assertIn(local_vlan_id, available,
-                          "Allocation should be in {}".format(available))
+        self.assertEquals(2, local_vlan_id,
+                          "Allocation should start with ID=2")
 
-
-        available.remove(local_vlan_id)
         mapping1 = KaloomVlanHostMapping()
         mapping1.network_id = 'fake_network_id'
         mapping1.host = host_1
@@ -60,51 +57,14 @@ class TestKaloomVlanPool(base.BaseTestCase):
         kaloom_db.get_all_vlan_mappings_for_host = MagicMock(return_value=[mapping1])
 
         local_vlan_id = self.pool.allocate_local_vlan(host_1, network_1)
-        self.assertIn(local_vlan_id, available,
-                          "Allocation should be in {}".format(available))
+        self.assertEquals(3, local_vlan_id,
+                          "Allocation should be increased to ID=3")
 
-
-        m2 = KaloomVlanHostMapping()
-        m2.network_id = network_1
-        m2.host = host_1
-        m2.vlan_id = 2
-        m3 = KaloomVlanHostMapping()
-        m3.network_id = network_1
-        m3.host = host_1
-        m3.vlan_id = 3
-        m4 = KaloomVlanHostMapping()
-        m4.network_id = network_1
-        m4.host = host_1
-        m4.vlan_id = 4
-
-        #check that use the last one
-        kaloom_db.get_all_vlan_mappings_for_host = MagicMock(return_value=[m2, m3])
-        local_vlan_id = self.pool.allocate_local_vlan(host_1, network_1)
-        self.assertEquals(local_vlan_id, 4,
-                          "Allocation should be 4, got {}".format(local_vlan_id))
-
-        #check that use the first one
-        kaloom_db.get_all_vlan_mappings_for_host = MagicMock(return_value=[m3, m4])
-        local_vlan_id = self.pool.allocate_local_vlan(host_1, network_1)
-        self.assertEquals(local_vlan_id, 2,
-                          "Allocation should be 2, got {}".format(local_vlan_id))
-
-        #handle no available vlans
-        kaloom_db.get_all_vlan_mappings_for_host = MagicMock(return_value=[m2, m3, m4])
-        local_vlan_id = self.pool.allocate_local_vlan(host_1, network_1)
-        self.assertIsNone(local_vlan_id,
-                          "Allocation should be None, got {}".format(local_vlan_id))
-
-        m5 = KaloomVlanHostMapping()
-        m5.network_id = network_1
-        m5.host = host_1
-        m5.vlan_id = 5
-
-        #check it does not crash in case the vlan is not in the range
-        kaloom_db.get_all_vlan_mappings_for_host = MagicMock(return_value=[m5])
-        local_vlan_id = self.pool.allocate_local_vlan(host_1, network_1)
-        self.assertIsNotNone(local_vlan_id,
-                          "Allocation should not be none")
-
+        host_2 = 'fake_host_2'
+        network_2 = 'fake_network_2'
+        kaloom_db.get_all_vlan_mappings_for_host = MagicMock(return_value=[])
+        local_vlan_id = self.pool.allocate_local_vlan(host_2, network_2)
+        self.assertEquals(2, local_vlan_id,
+                          "Allocation should start with ID=2")
 
 

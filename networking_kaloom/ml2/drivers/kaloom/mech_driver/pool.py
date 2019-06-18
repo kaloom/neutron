@@ -46,9 +46,8 @@ class KaloomVlanPool(object):
             else:
                  start, end = vlan_ranges[0]
             return (start, end)
-        except Exception:
-            LOG.exception("Failed to parse network_vlan_ranges. "
-                          "Service terminated!")
+        except Exception as e:
+            LOG.error("Failed to parse network_vlan_ranges. Service terminated! err:%s", e)
             sys.exit(1)
 
     def _get_available_vlans(self, host):

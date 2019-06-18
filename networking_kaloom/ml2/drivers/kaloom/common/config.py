@@ -26,10 +26,6 @@ kaloom_cfg_opts = [
                help="Kaloom password to authenticate to VFabric controller (as fallback)"),
     cfg.IntOpt('l3_sync_interval', default=180,
                help="Sync interval in seconds between L3 Service plugin and vFabric"),
-    cfg.BoolOpt('enable_cleanup',
-                default=False,
-                help='Toggle to enable cleanup of routers by the sync worker.'
-                       'If not set, a value of "False" is assumed.'),
 ]
 
 

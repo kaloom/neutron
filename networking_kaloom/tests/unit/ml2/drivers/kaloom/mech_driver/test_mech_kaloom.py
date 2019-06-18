@@ -18,7 +18,7 @@ from mock import patch, call
 from neutron_lib import constants as nconst
 from neutron_lib.plugins.ml2 import api
 
-from networking_kaloom.ml2.drivers.kaloom.mech_driver.mech_kaloom_ovs import KaloomOVSMechanismDriver, LOG
+from networking_kaloom.ml2.drivers.kaloom.mech_driver.mech_kaloom import KaloomOVSMechanismDriver,KaloomKVSMechanismDriver, LOG
 from networking_kaloom.ml2.drivers.kaloom.mech_driver.pool import KaloomVlanPool
 from networking_kaloom.ml2.drivers.kaloom.common.kaloom_netconf import KaloomNetconf
 from networking_kaloom.ml2.drivers.kaloom.db.kaloom_models import KaloomVlanHostMapping, KaloomKnidMapping
@@ -74,8 +74,10 @@ class KaloomMechanismDriverTestCase(base.AgentMechanismBaseTestCase):
         KaloomKnidMapping.__table__.create(bind=engine)
         KaloomVlanHostMapping.__table__.create(bind=engine)
         with patch.object(KaloomVlanPool, '_parse_network_vlan_ranges', return_value=(1,4094)):
-           self.driver = KaloomOVSMechanismDriver()
-           self.driver.initialize()
+           self.driver_ovs = KaloomOVSMechanismDriver()
+           self.driver_ovs.initialize()
+           self.driver_kvs = KaloomKVSMechanismDriver()
+           self.driver_kvs.initialize()
 
     def tearDown(self):
         super(KaloomMechanismDriverTestCase, self).tearDown()
@@ -88,24 +90,20 @@ class KaloomMechanismDriverTestCase(base.AgentMechanismBaseTestCase):
         context = base.FakePortContext(nconst.AGENT_TYPE_OVS,
                                        [self.AGENT_OVS],
                                        self.FAKE_SEGMENTS)
-        log_calls = [ call("Found 1 agents of OVS type"),
-                      call("Found 0 agents of KVS type"),
-                      call("Using OVS specific logic") ]
+        log_calls = [call("bind_port: Found OVS type agent, Using OVS specific logic")]
 
         with patch.object(LOG, 'info') as log_info_call:
-            self.driver.bind_port(context)
+            self.driver_ovs.bind_port(context)
             log_info_call.assert_has_calls(log_calls)
 
-    @patch.object(KaloomOVSMechanismDriver, 'try_to_bind_segment_for_agent', return_value=True)
+    @patch.object(KaloomKVSMechanismDriver, 'try_to_bind_segment_for_agent', return_value=True)
     def test_bind_port_kvs(self, b):
         context = base.FakePortContext(kconst.AGENT_TYPE_KVS,
                                        [self.AGENT_KVS],
                                        self.FAKE_SEGMENTS)
-        log_calls = [ call("Found 0 agents of OVS type"),
-                      call("Found 1 agents of KVS type"),
-                      call("Using KVS specific logic") ]
+        log_calls = [call("bind_port: Found KVS type agent, Using KVS specific logic") ]
 
         with patch.object(LOG, 'info') as log_info_call:
-            self.driver.bind_port(context)
+            self.driver_kvs.bind_port(context)
             log_info_call.assert_has_calls(log_calls)
         # assert False

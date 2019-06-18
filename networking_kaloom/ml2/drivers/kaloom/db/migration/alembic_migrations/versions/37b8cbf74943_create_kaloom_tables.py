@@ -33,8 +33,6 @@ def upgrade():
         'kaloom_ml2_knid_mapping',
         sa.Column('kaloom_knid', sa.BigInteger(), nullable=False),
         sa.Column('network_id', sa.String(length=255), nullable=False),
-        sa.Column('network_name', sa.String(length=255), nullable=False),
-        sa.Column('stale', sa.Boolean(), nullable=False),
         sa.PrimaryKeyConstraint('kaloom_knid')
     )
 
@@ -45,7 +43,8 @@ def upgrade():
         sa.Column('host', sa.String(length=255), nullable=False),
         sa.Column('segment_id', sa.String(length=255), nullable=False),
         sa.Column('network_name', sa.String(length=255), nullable=False),
-        sa.Column('stale', sa.Boolean(), nullable=False),
+        sa.Column('state', sa.Enum('CREATING', 'CREATED', 'DELETING'), nullable=False),
+        sa.Column('timestamp', sa.DateTime(), nullable=False),
         sa.PrimaryKeyConstraint('network_id', 'host')
     )
 

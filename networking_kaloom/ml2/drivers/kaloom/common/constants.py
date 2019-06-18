@@ -22,8 +22,6 @@ MAX_VLAN_ID = 4094
 MIN_SEGMENT_ID = 2
 MAX_SEGMENT_ID = 2 ** 32 - 1
 
-VLAN_POOL_LOCK = 'kaloom_vlan_pool_lock'
-SEGMENT_POOL_LOCK= 'kaloom_segment_pool_lock'
 MSGID_LOCK = 'kaloom_netconf_msgid_lock'
 SESSION_INIT_LOCK = 'kaloom_netconf_session_init_lock' 
 

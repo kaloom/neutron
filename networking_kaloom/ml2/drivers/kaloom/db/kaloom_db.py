@@ -15,35 +15,23 @@ import neutron.db.api as db_api
 from oslo_log import log
 from networking_kaloom.ml2.drivers.kaloom.db import kaloom_models
 from neutron.db.models.segment import NetworkSegment
-from neutron.db.models_v2 import Port
+from neutron.db.models_v2 import Port, Network
 from neutron.plugins.ml2.models import PortBinding
 import sqlalchemy.orm.exc as sa_exc
+from sqlalchemy import or_, and_, func
+from datetime import datetime, timedelta
 
 LOG = log.getLogger(__name__)
 
 
-def create_knid_mapping(kaloom_knid, network_id, network_name):
+def create_knid_mapping(kaloom_knid, network_id):
     db_session = db_api.get_writer_session()
     mapping = kaloom_models.KaloomKnidMapping(kaloom_knid=kaloom_knid,
-                                              network_id=network_id,
-                                              network_name=network_name)
+                                              network_id=network_id)
 
     db_session.add(mapping)
     db_session.flush()
     return mapping
-
-def update_knid_mapping(network_id, stale):
-    db_session = db_api.get_writer_session()
-    try:
-       mapping = db_session.query(kaloom_models.KaloomKnidMapping). \
-                 filter_by(network_id=network_id).one()
-       if mapping and mapping.stale != stale:
-          mapping.stale = stale 
-          db_session.flush()
-    except sa_exc.NoResultFound:
-        #nothing to update
-        return None
-    return True
 
 def get_knid_mapping(network_id):
     db_session = db_api.get_reader_session()
@@ -73,12 +61,12 @@ def get_segmentation_id_for_network(network_id):
         return None
 
 
-def get_segment_id_for_network(network_id):
+def get_segment_for_network(network_id):
     db_session = db_api.get_reader_session()
     try:
         segment = db_session.query(NetworkSegment).filter_by(network_id=network_id,
                                                              segment_index=0).one()
-        return segment.id
+        return segment
     except sa_exc.NoResultFound:
         return None
 
@@ -89,10 +77,10 @@ def delete_knid_mapping(network_id):
             filter_by(network_id=network_id).one()
         db_session.delete(mapping)
         db_session.flush()
-    except:
+    except (sa_exc.NoResultFound, sa_exc.StaleDataError):
         # no record was found, do nothing
+        # ignore concurrent deletion
         pass
-
 
 def get_all_knid_mappings():
     db_session = db_api.get_reader_session()
@@ -119,8 +107,9 @@ def delete_vlan_reservation(host, vlan_id):
             filter_by(host=host, vlan_id=vlan_id).one()
         db_session.delete(mapping)
         db_session.flush()
-    except sa_exc.NoResultFound:
+    except (sa_exc.NoResultFound, sa_exc.StaleDataError):
         # no record was found, do nothing
+        # ignore concurrent deletion
         pass
 
 def create_tp_operation(host, network_id):
@@ -139,6 +128,10 @@ def delete_tp_operation(host, network_id):
             filter_by(host=host, network_id=network_id).one()
         db_session.delete(mapping)
         db_session.flush()
+    except (sa_exc.NoResultFound, sa_exc.StaleDataError):
+        # no record was found, do nothing
+        # ignore concurrent deletion
+        pass
     except Exception as e:
         LOG.error('error while trying to delete_tp_operation on host=%s, network_id=%s, errmsg:%s', host, network_id, e)
         pass
@@ -160,23 +153,41 @@ def create_network_host_vlan_mapping(network_id, host, segment_id, vlan_id, netw
     db_session.flush()
     return mapping
 
-def update_network_host_vlan_mapping(network_id, host, stale):
+def update_state_on_network_host_vlan_mapping(network_id, host, state):
     db_session = db_api.get_writer_session()
     try:
         mapping = db_session.query(kaloom_models.KaloomVlanHostMapping). \
               filter_by(host=host, network_id=network_id).one()
-        if mapping:
-            mapping.stale = stale
+        if mapping and mapping.state != state:
+            mapping.state = state
+            mapping.timestamp = datetime.utcnow()
             db_session.flush()
-    except sa_exc.NoResultFound:
-        return None
-    return mapping
+    except (sa_exc.NoResultFound, sa_exc.StaleDataError):
+        #nothing to update
+        #concurrent deletion happened.
+        return False
+    return True
 
 def get_vlan_mapping_for_network_and_host(network_id, host):
     db_session = db_api.get_reader_session()
     try:
         return db_session.query(kaloom_models.KaloomVlanHostMapping). \
             filter_by(host=host, network_id=network_id).one()
+    except sa_exc.NoResultFound:
+        return None
+
+def get_stale_vlan_mappings(creating_seconds, deleting_seconds):
+    db_session = db_api.get_reader_session()
+    try:
+        now = datetime.utcnow()
+        old_creating_date = now - timedelta(seconds = creating_seconds)
+        old_deleting_date = now - timedelta(seconds = deleting_seconds)
+        return db_session.query(kaloom_models.KaloomVlanHostMapping). \
+            filter(or_(and_(kaloom_models.KaloomVlanHostMapping.state == "CREATING", \
+                        kaloom_models.KaloomVlanHostMapping.timestamp <= old_creating_date),\
+                       and_(kaloom_models.KaloomVlanHostMapping.state == "DELETING", \
+                        kaloom_models.KaloomVlanHostMapping.timestamp <= old_deleting_date)
+                      )).all()
     except sa_exc.NoResultFound:
         return None
 
@@ -187,8 +198,9 @@ def delete_host_vlan_mapping(host, network_id):
             filter_by(host=host, network_id=network_id).one()
         db_session.delete(mapping)
         db_session.flush()
-    except:
+    except (sa_exc.NoResultFound, sa_exc.StaleDataError):
         # no record was found, do nothing
+        # ignore concurrent deletion
         pass
 
 def get_all_vlan_mappings_for_host(host):
@@ -202,16 +214,9 @@ def get_all_vlan_mappings_for_network(network_id):
         network_id=network_id).all()
 
 
-def get_ports_for_network_and_host(network_id, host):
+def get_port_count_for_network_and_host(network_id, host):
     db_session = db_api.get_reader_session()
-    network_host_ports = list()
-    ports = db_session.query(Port).filter_by(network_id=network_id).all()
-    for port in ports:
-        binding = db_session.query(PortBinding).filter_by(port_id=port.id).one()
-        if binding.host == host:
-            network_host_ports.append(port)
-    return network_host_ports
-
+    return db_session.query(func.count(Port.id)).join(PortBinding).filter(Port.network_id==network_id, PortBinding.host == host).scalar()
 
 def get_mac_for_port(port_id):
     db_session = db_api.get_reader_session()
@@ -220,3 +225,12 @@ def get_mac_for_port(port_id):
         return port.mac_address
     except sa_exc.NoResultFound:
         return None
+
+def get_networks():
+    db_session = db_api.get_reader_session()
+    try:
+        networks = db_session.query(Network.id, Network.name).all()
+        return networks
+    except sa_exc.NoResultFound:
+        return []
+

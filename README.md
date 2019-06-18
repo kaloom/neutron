@@ -1,5 +1,5 @@
 <!---
- Copyright 2019 Kaloom, Inc.
+ Copyright 2019 Kaloom, Inc.  All rights reserved.
     Licensed under the Apache License, Version 2.0 (the "License"); you may
     not use this file except in compliance with the License. You may obtain
     a copy of the License at
@@ -41,10 +41,10 @@ We can set the TP annotation using the `setTpAnnotation` utility
 
 ```bash
 $ ./setTpAnnotation e2053869-a5f6-41b8-9b9b-778ea648c220 \
-	<COMPUTENODE-HOSTNAME>
+	r620-40JMCY1.OpenStack.lab.kaloom.io
 ```
 
-In the above example, `<COMPUTENODE-HOSTNAME>` is the hostname of 
+In the above example, `r620-40JMCY1.OpenStack.lab.kaloom.io` is the hostname of 
 Openstack server and `e2053869-a5f6-41b8-9b9b-778ea648c220` is the UUID of a TP 
 that is connected to the given host's br-provider upstream port.
 
@@ -62,7 +62,6 @@ KVS node
 $ sudo yum install python-pip
 $ sudo pip install grpcio grpcio-tools
 $ sudo yum localinstall -y  kaloom_kvs_agent.rpm
-$ sudo systemctl daemon-reload 
 ```
 
 Proceed to the configuration section after the installation and follow the steps
@@ -107,15 +106,12 @@ $ sudo systemctl stop neutron-server
    # If not set, a value of 180 seconds is assumed. (integer value)
    # If set to 0, the plugin will never sync after first sync.
    l3_sync_interval = 600
-   # Toggle to enable cleanup of routers by the sync worker.
-   #If not set, a value of "False" is assumed. (boolean value)
-   enable_cleanup = false
 ```
 
 5. In `/etc/neutron/plugins/ml2/ml2_conf.ini` update/add the following
    variables
 ```ini
-   mechanism_drivers=kaloom,openvswitch
+   mechanism_drivers=kaloom_kvs,kaloom_ovs,openvswitch
    type_drivers=kaloom_knid,vlan,vxlan,flat
    tenant_network_types=kaloom_knid
    [ml2_type_vlan]
@@ -177,33 +173,33 @@ $ sudo systemctl stop neutron-server
 
 ## OVS-DPDK Compute Nodes
 
-3. Increase Hugepage available for VMs
+1. Increase Hugepage available for VMs
 ```bash
    $sysctl -w vm.nr_hugepages=4096
 ```
 
-4. Enable DPDK in OVS
+2. Enable DPDK in OVS
 ```bash
    $ovs-vsctl --no-wait set Open_vSwitch . other_config:dpdk-init=true
 ```
 
-5. Edit `/etc/libvirt/qemu.conf` to grant access to vhost-user sockets.
+3. Edit `/etc/libvirt/qemu.conf` to grant access to vhost-user sockets.
 ```ini
    group = "hugetlbfs"
 ```
 
-6. Restart services
+4. Restart services
 ```bash
    $systemctl restart openvswitch
    $systemctl restart libvirtd
 ```
 
-7. Create the provider bridge
+5. Create the provider bridge
 ```bash
    $ ovs-vsctl add-br br-provider -- set bridge br-provider datapath_type=netdev
 ```
 
-8. Add dpdk interface to provider bridge
+6. Add dpdk interface to provider bridge
 ```bash
    $modprobe vfio-pci
    $ifdown p3p1
@@ -211,7 +207,7 @@ $ sudo systemctl stop neutron-server
    $ovs-vsctl add-port br-provider p3p1 -- set Interface p3p1 type=dpdk options:dpdk-devargs=0000:04:00.0
 ``` 
 
-9. Edit `/etc/neutron/plugins/ml2/openvswitch_agent.ini`
+7. Edit `/etc/neutron/plugins/ml2/openvswitch_agent.ini`
 ```ini
    [ovs]
    bridge_mappings = provider:br-provider
@@ -219,36 +215,39 @@ $ sudo systemctl stop neutron-server
    vhostuser_socket_dir = /tmp
 ```
 
-10. Restart service
+8. Restart service
 ```bash
    $systemctl restart neutron-openvswitch-agent
 ```
 
 ## KVS Compute Nodes
 
-11. Make sure that KVS is configured and running.
+1. Make sure that KVS is configured and running.
 ```bash
-   $ sudo /opt/kaloom/bin/kssctl port list
+   $ sudo /opt/kaloom/bin/kvsctl port list
 ```
 
-12. Increase Hugepage available for VMs
+2. Increase Hugepage available for VMs
 ```bash
    $ sudo sysctl -w vm.nr_hugepages=4096
 ```
 
-13. Install `kaloom_kvs_agent` package on the compute node and 
-   restart nova-compute.
+3. Install `kaloom_kvs_agent` package on the compute node, edit `/etc/nova/nova.conf` 
+```ini
+compute_driver=libvirt_kaloom.LibvirtDriverKaloom
+```
+and restart nova-compute.
 ```bash
    $ sudo systemctl restart openstack-nova-compute
 ```
 
-14. Stop Open vSwitch agent if already running
+4. Stop Open vSwitch agent if already running
 ```bash
     $ sudo systemctl stop neutron-openvswitch-agent
     $ sudo systemctl disable neutron-openvswitch-agent
 ```
 
-15. Do following in case of change in default setting of `vhostuser_socket_dir` in `/etc/neutron/plugins/ml2/ml2_conf_kaloom.ini`
+5. Do following in case of change in default setting of `vhostuser_socket_dir` in `/etc/neutron/plugins/ml2/ml2_conf_kaloom.ini`
 ```bash
    $ DIR="/test"
    $ USER=`python -c "from kaloom_kvs_agent.common import utils; print utils.get_qemu_process_user()"`
@@ -259,13 +258,13 @@ $ sudo systemctl stop neutron-server
    $ restorecon -Rv $DIR
 ```
 
-16. Start the Kaloom agent
+6. Start the Kaloom agent
 ```bash
    $ sudo systemctl start neutron-kaloom-agent
    $ sudo systemctl enable neutron-kaloom-agent
 ```
 
-17. Agent LOG can be checked as:
+7. Agent LOG can be checked as:
 ```bash
    $ tail -f /var/log/neutron/neutron-kaloom-agent.log
 ```
@@ -295,20 +294,20 @@ $ sudo systemctl stop neutron-server
 ```
 
 ## OVS Network Nodes
-In case of `service_plugins=router,..` in `/etc/neutron/neutron.conf`, do following:
-1. Edit /etc/neutron/l3_agent.ini and update
+1. In case of `service_plugins=router,..` in `/etc/neutron/neutron.conf`, do following
+Edit /etc/neutron/l3_agent.ini and update
 ```ini
    interface_driver = neutron.agent.linux.interface.OVSInterfaceDriver
    #external_network_bridge =
    #gateway_external_network_id = 
 ```
 
-2. Restart L3 agent
+Restart L3 agent
 ```bash
    $ systemctl restart neutron-l3-agent
 ```
 
-In case of `service_plugins=kaloom_l3,..` in `/etc/neutron/neutron.conf`
+2. In case of `service_plugins=kaloom_l3,..` in `/etc/neutron/neutron.conf`
 ```bash
    $systemctl stop neutron-l3-agent
    $systemctl disable neutron-l3-agent
@@ -324,20 +323,20 @@ In case of `service_plugins=kaloom_l3,..` in `/etc/neutron/neutron.conf`
 ```
 
 ## KVS Network Nodes
-In case of `service_plugins=router,..` in `/etc/neutron/neutron.conf`, do following:
-1. Edit /etc/neutron/l3_agent.ini and update
+1. In case of `service_plugins=router,..` in `/etc/neutron/neutron.conf`, do following:
+Edit /etc/neutron/l3_agent.ini and update
 ```ini
    interface_driver = kaloom_kvs_agent.interface.KVSInterfaceDriver
    #external_network_bridge =
    #gateway_external_network_id = 
 ```
 
-2. Restart L3 agent
+Restart L3 agent
 ```bash
    $ systemctl restart neutron-l3-agent
 ```
 
-In case of `service_plugins=kaloom_l3,..` in `/etc/neutron/neutron.conf`
+2. In case of `service_plugins=kaloom_l3,..` in `/etc/neutron/neutron.conf`
 ```bash
    $systemctl stop neutron-l3-agent
    $systemctl disable neutron-l3-agent

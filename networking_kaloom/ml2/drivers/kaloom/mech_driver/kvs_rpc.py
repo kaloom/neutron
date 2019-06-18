@@ -71,7 +71,7 @@ class KvsServerRpcCallback(object):
            return port_id, mac
         except Exception as e:
            msg = "_get_parent_port_info failed: %s" % (e)
-           LOG.exception(msg)
+           LOG.error(msg)
            return None, None
 
     def get_parent_port_info(self, rpc_context, **kwargs):
@@ -107,7 +107,7 @@ class KvsServerRpcCallback(object):
            return port['network_id'], pairs
         except Exception as e:
            msg = "_get_info_port failed: %s" % (e)
-           LOG.exception(msg)
+           LOG.error(msg)
            return None, []
 
     def get_info_sub_port(self, rpc_context, **kwargs):

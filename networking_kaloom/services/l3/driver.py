@@ -173,6 +173,11 @@ class KaloomL3Driver(object):
                     msg = "non-existing vfabric router"
                     raise ValueError(msg)
 
+                #plugin.remove_router_interface left stale data on vfabric? not cleaned yet? then reuse.
+                #avoids "add_ipaddress_to_interface failed: That ipv4 address already exist for that router"
+                if router_info['ip_address'] in router_inf_info['ip_addresses']:
+                    return
+
                 ## first subnet request ? absence of router--l2_node interface, first create interface.
                 attach_router_called = False
                 if tp_interface_name is None:

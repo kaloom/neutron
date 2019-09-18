@@ -542,5 +542,5 @@ class KaloomL3ServicePlugin(service_base.ServicePluginBase,
                 self.driver.remove_router_interface(context, router_info)
                 return router_ifc_to_del
             except Exception as e:
-                msg = "remove_router_interface failed in vfabric: %s" % (e)
+                msg = "remove_router_interface (router %s -- IP %s subnet_id %s) failed in vfabric: %s" % (router['name'], ip_address, subnet['id'], e)
                 LOG.error(msg)

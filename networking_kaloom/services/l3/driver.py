@@ -174,8 +174,10 @@ class KaloomL3Driver(object):
                     raise ValueError(msg)
 
                 ## first subnet request ? absence of router--l2_node interface, first create interface.
+                attach_router_called = False
                 if tp_interface_name is None:
                     tp_interface_name = self.vfabric.attach_router(vfabric_router_id, l2_node_id)
+                    attach_router_called = True
 
                 #add_ipaddress_to_interface
                 interface_info={}
@@ -188,11 +190,12 @@ class KaloomL3Driver(object):
                     self.vfabric.add_ipaddress_to_interface(interface_info)
                 except Exception as _e:
                     msg = "add_ipaddress_to_interface failed: %s" % (_e)
-                    self.remove_router_interface(context, router_info)
+                    if attach_router_called:
+                        self.vfabric.detach_router(vfabric_router_id, l2_node_id)
                     raise ValueError(msg)
             except Exception as e:
-                msg = (_('Failed to add subnet %s to vfabric router '
-                    '%s -- network %s, err:%s') % (router_info['subnet_id'], router_name, l2_node_id, e))
+                msg = (_('Failed to add subnet %s (IP %s) to vfabric router '
+                    '%s -- network %s, err:%s') % (router_info['subnet_id'], router_info['ip_address'], router_name, l2_node_id, e))
                 LOG.error(msg)
                 raise kaloom_exc.KaloomServicePluginRpcError(msg=msg)
 
@@ -220,9 +223,10 @@ class KaloomL3Driver(object):
                     LOG.warning('no router_interface to remove on router=%s', router_name)
                     return
 
-                if count_ip <= 1: #last IP subnet remained, detach router
+                #last IP subnet remained, detach router
+                if count_ip == 0 or (count_ip == 1 and router_info['ip_address'] == router_inf_info['ip_addresses'][0]):
                     self.vfabric.detach_router(vfabric_router_id, l2_node_id)
-                else:
+                elif router_info['ip_address'] in router_inf_info['ip_addresses']:
                     #delete_ipaddress_from_interface
                     interface_info={}
                     interface_info['router_node_id'] = vfabric_router_id

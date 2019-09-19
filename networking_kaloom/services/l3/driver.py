@@ -160,6 +160,14 @@ class KaloomL3Driver(object):
         Adds a subnet configuration to the router interface on Kaloom vFabric.
         This deals with both IPv6 and IPv4 configurations. 
         """
+        def _get_overlapped_subnet(given_ip_cidr, existing_ip_cidrs ):
+            given_net = netaddr.IPNetwork(given_ip_cidr)
+            for ip_cidr in existing_ip_cidrs:
+                existing_net = netaddr.IPNetwork(ip_cidr)
+                if given_net in existing_net or existing_net in given_net:
+                    return ip_cidr
+            return None
+
         if router_info:
             router_name = utils._kaloom_router_name(self.prefix, router_info['id'],
                                                    router_info['name'])
@@ -173,24 +181,35 @@ class KaloomL3Driver(object):
                     msg = "non-existing vfabric router"
                     raise ValueError(msg)
 
-                #plugin.remove_router_interface left stale data on vfabric? not cleaned yet? then reuse.
-                #avoids "add_ipaddress_to_interface failed: That ipv4 address already exist for that router"
-                if router_info['ip_address'] in router_inf_info['ip_addresses']:
-                    return
-
                 ## first subnet request ? absence of router--l2_node interface, first create interface.
                 attach_router_called = False
                 if tp_interface_name is None:
                     tp_interface_name = self.vfabric.attach_router(vfabric_router_id, l2_node_id)
                     attach_router_called = True
 
-                #add_ipaddress_to_interface
+                #interface_info common to both add and delete.
                 interface_info={}
                 interface_info['router_node_id'] = vfabric_router_id
                 interface_info['interface_name'] = tp_interface_name
                 interface_info['ip_version'] = router_info['ip_version']
+                prefix_length = router_info['cidr'].split('/')[1]
+
+                #plugin.remove_router_interface left stale data on vfabric? not cleaned yet? then reuse or update.
+                #otherwise multiple IPs of same subnet would complain "That ipv4 address already exist for that router"
+                given_ip_cidr = '%s/%s' % (router_info['ip_address'], prefix_length)
+                overlapped_subnet_ip_cidr = _get_overlapped_subnet(given_ip_cidr, router_inf_info['cidrs'] )
+                if overlapped_subnet_ip_cidr is not None:
+                    if given_ip_cidr == overlapped_subnet_ip_cidr:
+                        #already exists exact ip/subnet in vfabric, nothing to do.
+                        return
+                    else:
+                        #clean overlap now: by calling delete_ipaddress_to_interface
+                        interface_info['ip_address'] = overlapped_subnet_ip_cidr.split('/')[0]
+                        self.vfabric.delete_ipaddress_from_interface(interface_info)
+
+                #add_ipaddress_to_interface
                 interface_info['ip_address'] = router_info['ip_address']
-                interface_info['prefix_length'] = router_info['cidr'].split('/')[1]
+                interface_info['prefix_length'] = prefix_length
                 try:
                     self.vfabric.add_ipaddress_to_interface(interface_info)
                 except Exception as _e:
@@ -218,7 +237,7 @@ class KaloomL3Driver(object):
                 router_inf_info = self.vfabric.get_router_interface_info(router_name, l2_node_id)
                 vfabric_router_id = router_inf_info['node_id']
                 tp_interface_name = router_inf_info['interface']
-                count_ip = len(router_inf_info['ip_addresses'])
+                count_ip = len(router_inf_info['cidrs'])
 
                 if vfabric_router_id is None:
                     LOG.warning('no router_interface to remove on non-existing vfabric router=%s', router_name)
@@ -228,10 +247,11 @@ class KaloomL3Driver(object):
                     LOG.warning('no router_interface to remove on router=%s', router_name)
                     return
 
+                router_inf_ip_addresses = [cidr.split('/')[0] for cidr in router_inf_info['cidrs']]
                 #last IP subnet remained, detach router
-                if count_ip == 0 or (count_ip == 1 and router_info['ip_address'] == router_inf_info['ip_addresses'][0]):
+                if count_ip == 0 or (count_ip == 1 and router_info['ip_address'] == router_inf_ip_addresses[0]):
                     self.vfabric.detach_router(vfabric_router_id, l2_node_id)
-                elif router_info['ip_address'] in router_inf_info['ip_addresses']:
+                elif router_info['ip_address'] in router_inf_ip_addresses:
                     #delete_ipaddress_from_interface
                     interface_info={}
                     interface_info['router_node_id'] = vfabric_router_id

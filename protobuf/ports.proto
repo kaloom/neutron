@@ -1,0 +1,152 @@
+/*
+* Copyright 2019 Kaloom, Inc.  All rights reserved.
+*    Licensed under the Apache License, Version 2.0 (the "License"); you may
+*    not use this file except in compliance with the License. You may obtain
+*    a copy of the License at
+*
+*         http://www.apache.org/licenses/LICENSE-2.0
+*
+*    Unless required by applicable law or agreed to in writing, software
+*    distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+*    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+*    License for the specific language governing permissions and limitations
+*    under the License.
+*/
+syntax = "proto3";
+
+package kvs.pb;
+
+message PortType {
+    oneof PortConfig {
+        UDPSocketPortConfig udpSocketPortConfig = 1;
+        VDevPortConfig vDevPortConfig = 2;
+        NICPortConfig nicPortConfig = 3;
+        VHostPortConfig vHostPortConfig = 4;
+    }
+}
+
+enum AdminStateEnum {
+    AdminStateDefault = 0; /* Use default or current admin state */
+    AdminStateUp = 1;
+    AdminStateDown = 2;
+    AdminStateUnknown = 3;  /* Return when the admin state cannot be returned */
+}
+
+enum OperStateEnum {
+    OperStateUnknown = 0;
+    OperStateUp = 1;
+    OperStateDown = 2;
+}
+
+message Port {
+    uint64 PortID = 1;
+    PortType Type = 2;
+    AdminStateEnum AdminState = 3;
+    PortStats Stats = 4;
+    PortState State = 5;
+}
+
+message PortStats {
+	// Time at which the stat counters were read
+	double Timestamp = 1;
+
+	// Total number of packets received
+	uint64 RXPackets = 2;
+
+	// Total number of bytes received
+	uint64 RXBytes = 3;
+
+	// Total number of received packets dropped
+	uint64 RXDropped = 4;
+
+	// Total number of packets transmitted
+	uint64 TXPackets = 5;
+
+	// Total number of bytes transmitted
+	uint64 TXBytes = 6;
+
+	// Total number of transmitted packets dropped
+	uint64 TXDropped = 7;
+}
+
+message PortState {
+    // Link Speed in Mbps
+	uint32 Speed = 1;
+
+	// Indicates whether the link is full-duplex
+	bool FullDuplex = 2;
+
+	// Indicates whether the port uses an auto-negotiated speed and duplex
+	bool Autoneg = 3;
+
+	// Operational state
+	OperStateEnum OperState = 4;
+}
+
+// UDPSocketPortConfig holds the configuration parameters to create a
+// UDP socket port.
+message UDPSocketPortConfig {
+    // UDP port on which to send and receive packets. The default is the KNF port.
+    uint64 UDPPort = 1;
+
+    // IP address to bind socket to.
+    bytes IPAddress = 2;
+}
+
+// VDevPortConfig holds the configuration parameters to create a virtual device
+// (virtio_user) port.
+message VDevPortConfig {
+    // MAC address of virtual interface. If this is left empty, a MAC address
+    // is randomly generated.
+    bytes MACAddress = 1;
+
+    // Name of virtual interface
+    string IfaceName = 2;
+
+    // PID of process running within a container. This is used to specify
+    // in which network namespace the interface should be created. A CPID of 0
+    // indicates that the interface should be created in the host namespace.
+    uint64 CPID = 3;
+
+    // MTU of virtual interface
+    uint32 MTU = 4;
+}
+
+// NICPortConfig holds the configuration parameters to create a DPDK PMD port
+// bound to a specific network interface. The MAC should correspond to the MAC
+// of the NIC.
+message NICPortConfig {
+    // PCI ID of NIC to bind to
+    string PciID = 1;
+    
+    // MAC Address of port. It should correspond to the MAC of the NIC
+    bytes MACAddress = 2;
+    
+    // MTU of port
+    uint32 MTU = 3;
+    
+    // Number of RX queues for this port
+    uint32 NumRXQueues = 4;
+
+    // Number of TX queues for this port
+    uint32 NumTXQueues = 5;
+
+    // Number of descriptors for RX queues
+    uint32 RXQueueSize = 6;
+
+    // Number of descriptors for TX queues
+    uint32 TXQueueSize = 7;
+}
+
+// VHostPortConfig holds the configuration parameters to create a Vhost-backed
+// DPDK PMD port used to connect VMs (or containers) to KVS.
+message VHostPortConfig {
+    // Path to chardev used for vhost socket
+    string Path = 1;
+    
+    // Number of RX and TX queues for this port
+    uint32 NumQueues = 4;
+
+    // Number of descriptors for RX and TX queues
+    uint32 QueueSize = 5;
+}

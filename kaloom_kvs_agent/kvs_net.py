@@ -340,7 +340,7 @@ def delete_kvs_port(kvs_device_name, socket_dir=None,file_prefix=None):
         return False
 
 
-def add_anti_spoofing_rule(port_index, mac, ip):
+def add_anti_spoofing_rule(port_index, mac, ip, vlan = 0):
     # open a gRPC channel
     channel = grpc.insecure_channel(a_const.KVS_SERVER)
 
@@ -350,6 +350,9 @@ def add_anti_spoofing_rule(port_index, mac, ip):
     # create a valid request message: AddAntiSpoofingRuleRequest
     req=kvs_msg_pb2.AddAntiSpoofingRuleRequest()
     req.PortID = port_index
+    req.VlanID = vlan
+    req.VlanValid = True #VlanID is valid
+
     if mac:
        LOG.debug("%s", mac)
        macbytes = binascii.unhexlify(mac.replace(b':', b''))
@@ -370,10 +373,10 @@ def add_anti_spoofing_rule(port_index, mac, ip):
         LOG.error("Error on grpc AddAntiSpoofingRuleRequest call: Code %(code)s, Message %(msg)s",
                   {'code':response.error.Code, 'msg':response.error.Errormsg})
     else:
-        LOG.info("add_anti_spoofing_rule on port_index %s for mac %s and ip %s ",
-                 port_index, mac, ip)
+        LOG.info("add_anti_spoofing_rule on port_index %s vlan:%s for mac %s and ip %s ",
+                 port_index, vlan, mac, ip)
 
-def delete_anti_spoofing_rule(port_index, mac, ip):
+def delete_anti_spoofing_rule(port_index, mac, ip, vlan = 0):
     # open a gRPC channel
     channel = grpc.insecure_channel(a_const.KVS_SERVER)
 
@@ -383,6 +386,9 @@ def delete_anti_spoofing_rule(port_index, mac, ip):
     # create a valid request message: DeleteAntiSpoofingRuleRequest
     req = kvs_msg_pb2.DeleteAntiSpoofingRuleRequest()
     req.PortID = port_index
+    req.VlanID = vlan
+    req.VlanValid = True #VlanID is valid
+
     if mac:
        LOG.debug("%s", mac)
        macbytes = binascii.unhexlify(mac.replace(b':', b''))
@@ -405,10 +411,20 @@ def delete_anti_spoofing_rule(port_index, mac, ip):
         LOG.error("Error on grpc DeleteAntiSpoofingRule call: Code %(code)s, Message %(msg)s",
                   {'code':response.error.Code, 'msg':response.error.Errormsg})
     else:
-        LOG.info("delete_anti_spoofing_rule on port_index %s for mac %s and ip %s ",
-                    port_index, mac, ip)
+        LOG.info("delete_anti_spoofing_rule on port_index %s vlan:%s for mac %s and ip %s ",
+                    port_index, vlan, mac, ip)
 
-def list_anti_spoofing_rules(port_index, vlan = None):
+def _get_string_pair(bytes_ip, bytes_mac):
+    len_ip = len(bytes_ip)
+    if len_ip == 4: ##4 bytes of IPv4
+        ip = socket.inet_ntoa(bytes_ip)
+    elif len_ip == 16: ##16 bytes of IPv6
+        ip = socket.inet_ntop(socket.AF_INET6, bytes_ip)
+    mac = "%02x:%02x:%02x:%02x:%02x:%02x" % struct.unpack("BBBBBB", bytes_mac)
+    pair = {"ip": ip , "mac": mac}
+    return pair
+
+def list_anti_spoofing_rules(port_index, vlan = 0):
     # open a gRPC channel
     channel = grpc.insecure_channel(a_const.KVS_SERVER)
 
@@ -418,7 +434,10 @@ def list_anti_spoofing_rules(port_index, vlan = None):
     # create a valid request message: GetAntiSpoofingRulesRequest
     req=kvs_msg_pb2.GetAntiSpoofingRulesRequest()
     req.PortID = port_index
-    #vlan specific spoofing rules or for all vlans TODO
+
+    #specific vlan anti-spoofing rules
+    req.VlanID = vlan
+    req.VlanValid = True #VlanID is valid
 
     # make the call
     response = stub.GetAntiSpoofingRules(req)
@@ -431,12 +450,8 @@ def list_anti_spoofing_rules(port_index, vlan = None):
         return None
     else:
         pairs = []
-        for rule in response.Rules:
-            if len(rule.IP) == 4: ##4 bytes of IPv4
-               ip = socket.inet_ntoa(rule.IP)
-            elif len(rule.IP) == 16: ##16 bytes of IPv6
-               ip = socket.inet_ntop(socket.AF_INET6, rule.IP)
-            mac = "%02x:%02x:%02x:%02x:%02x:%02x" % struct.unpack("BBBBBB", rule.MACAddress)
-            pair = {"ip": ip , "mac": mac}
-            pairs.append(pair)
+        for rule in response.VlanRules:
+           pair = _get_string_pair(rule.Rule.IP, rule.Rule.MACAddress)
+           pairs.append(pair)
         return pairs
+

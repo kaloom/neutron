@@ -1,1 +1,7 @@
 Migration script for Kaloom ML2 network driver
+
+To generate next revision (for development):
+cd /usr/lib/python2.7/site-packages/networking_kaloom/ml2/drivers/kaloom/db/migration/
+alembic revision -m "test"
+#generates file in ./alembic_migrations/versions/
+modify newly generated file for how we want to upgrade. 

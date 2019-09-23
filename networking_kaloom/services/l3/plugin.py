@@ -36,7 +36,11 @@ from neutron.db import l3_gwmode_db
 from neutron.plugins.ml2.driver_context import NetworkContext  # noqa
 
 from networking_kaloom.services.l3 import driver as kaloom_l3_driver
+from networking_kaloom.ml2.drivers.kaloom.common import constants as kconst
 from networking_kaloom.ml2.drivers.kaloom.common import utils
+from neutron_lib.db import api as db_api
+from networking_kaloom.ml2.drivers.kaloom.db import kaloom_db
+from eventlet import greenthread
 
 LOG = logging.getLogger(__name__)
 
@@ -45,7 +49,6 @@ class KaloomL3SyncWorker(worker.BaseWorker):
     def __init__(self, driver, prefix):
         self.driver = driver
         self.prefix = prefix
-        self._enable_cleanup = driver._enable_cleanup
         self._loop = None
         super(KaloomL3SyncWorker, self).__init__(worker_process_count=0)
 
@@ -78,33 +81,29 @@ class KaloomL3SyncWorker(worker.BaseWorker):
     def get_subnet_info(self, subnet_id):
         return self.get_subnet(subnet_id)
 
-    def get_routers_and_interfaces(self):
+    def get_router_interfaces(self, r):
         core = directory.get_plugin()
         ctx = nctx.get_admin_context()
-        routers = directory.get_plugin(plugin_constants.L3).get_routers(ctx)
         grouped_router_interfaces = {}
-        for r in routers:
-            ports = core.get_ports(ctx,
-                                   filters={'device_id': [r['id']]}) or []
-            for p in ports:
-                for fixed_ip in p['fixed_ips']:
-                   router_interface = r.copy()
-                   subnet_id = fixed_ip['subnet_id']
-                   subnet = core.get_subnet(ctx, subnet_id)
-                   network_id = p['network_id'] 
-                   nw_name = utils._kaloom_nw_name(self.prefix, network_id, utils._get_network_name(network_id))
-                   router_interface['nw_name'] = nw_name
-                   router_interface['ip_address'] = fixed_ip['ip_address']
-                   router_interface['cidr'] = subnet['cidr']
-                   router_interface['gip'] = subnet['gateway_ip']
-                   router_interface['ip_version'] = subnet['ip_version']
-                   router_interface['subnet_id'] = subnet_id
-                   r_tuple=(r['id'], r['name'], nw_name)
-                   if r_tuple in grouped_router_interfaces:
-                       grouped_router_interfaces[r_tuple].append(router_interface)
-                   else:
-                       grouped_router_interfaces[r_tuple] = [router_interface]
-        return routers, grouped_router_interfaces
+        ports = core.get_ports(ctx, filters={'device_id': [r['id']]}) or []
+        for p in ports:
+            for fixed_ip in p['fixed_ips']:
+                router_interface = r.copy()
+                subnet_id = fixed_ip['subnet_id']
+                subnet = core.get_subnet(ctx, subnet_id)
+                network_id = p['network_id']
+                nw_name = utils._kaloom_nw_name(self.prefix, network_id)
+                router_interface['nw_name'] = nw_name
+                router_interface['ip_address'] = fixed_ip['ip_address']
+                router_interface['cidr'] = subnet['cidr']
+                router_interface['gip'] = subnet['gateway_ip']
+                router_interface['ip_version'] = subnet['ip_version']
+                router_interface['subnet_id'] = subnet_id
+                if nw_name in grouped_router_interfaces:
+                    grouped_router_interfaces[nw_name].append(router_interface)
+                else:
+                    grouped_router_interfaces[nw_name] = [router_interface]
+        return grouped_router_interfaces
 
     def synchronize(self):
         """Synchronizes Router DB from Neturon DB with Kaloom Fabric.
@@ -112,34 +111,79 @@ class KaloomL3SyncWorker(worker.BaseWorker):
         Walks through the Neturon Db and ensures that all the routers
         created in Netuton DB match with Kaloom Fabric. After creating appropriate
         routers, it ensures to add interfaces as well.
+        Stranded routers in vFabric get deleted.
         Uses idempotent properties of Kaloom vFabric configuration, which means
         same commands can be repeated.
         """
-        LOG.info('Syncing Neutron Router DB <-> vFabric')
-        routers, grouped_router_interfaces = self.get_routers_and_interfaces()
-        if self._enable_cleanup:
-            self.driver.do_cleanup()
-        self.create_routers(routers)
-        self.create_router_interfaces(grouped_router_interfaces)
-
-
-    def create_routers(self, routers):
-        for r in routers:
+        # Sync (read from neutron_db and vfabric) can't go in parallel with router operations
+        # parallelism of router operations
+        # write (x) lock during transaction.
+        db_session = db_api.get_writer_session()
+        with db_session.begin(subtransactions=True):
             try:
-                if not self.driver.router_exists(self, r):
-                   self.driver.create_router(self, r)
-            except Exception:
-                pass
-    def create_router_interfaces(self, grouped_router_interfaces):
-        for r_tuple in grouped_router_interfaces.keys():
-            (router_id, name, nw_name) = r_tuple
-            if not self.driver.router_l2node_link_exists(router_id, name, nw_name):
-                router_interfaces = grouped_router_interfaces[r_tuple]
-                for r in router_interfaces:
+                kaloom_db.get_Lock(db_session, kconst.L3_LOCK_NAME, read=False, caller_msg = 'l3_sync_read')
+                routers = directory.get_plugin(plugin_constants.L3).get_routers(nctx.get_admin_context())
+                vfabric_routers = self.driver.get_routers()
+            except Exception as e:
+                LOG.warning(e)
+                return
+        LOG.info('Syncing Neutron Router DB <-> vFabric')
+        self.sync_routers(routers, vfabric_routers)
+        self.sync_router_interfaces(routers)
+
+    def sync_routers(self, routers, vfabric_routers):
+        try:
+           #create routers if does not exist in vfabric
+           for r in routers:
+               vfabric_router = utils._kaloom_router_name(self.prefix, r['id'], r['name'])
+               if vfabric_router in vfabric_routers.keys():
+                   #mark as non-stranding router
+                   vfabric_routers.pop(vfabric_router, None)
+               else:
                    try:
-                      self.driver.add_router_interface(self, r)
-                   except Exception:
-                      pass
+                       self.driver.create_router(self, r)
+                   except Exception as e:
+                       LOG.error("sync_routers failed to create router=%s, msg:%s", vfabric_router, e)
+           # remove stranded vfabric routers
+           # possibility of stranded routers: router creation after netconf timeout; manually added routers in vFabric, failed deletion 
+           for vfabric_router in vfabric_routers.keys():
+               router_node_id = vfabric_routers[vfabric_router]
+               try:
+                  LOG.info('Trying to delete_router %s in vfabric', vfabric_router)
+                  self.driver.vfabric.delete_router(router_node_id)
+               except Exception as e:
+                  LOG.error("sync_routers failed to delete router=%s, msg:%s", vfabric_router, e)
+        except Exception as e:
+            LOG.error("sync_routers failed, msg:%s", e)
+
+    def sync_router_interfaces(self, routers):
+        for r in routers:
+            # Sync (vfabric.add_router_interface) can't go in parallel with router operations (on same router)
+            # to avoid race condition of creating router--network link.
+            # parallelism of router operations (on different router)
+            # read (s) lock on "the router" during transaction.
+            db_session = db_api.get_writer_session()
+            with db_session.begin(subtransactions=True):
+                try:
+                    caller_msg = 'l3_sync_interface on router id=%s name=%s' % (r['id'] , r['name'])
+                    kaloom_db.get_Lock(db_session, r['id'], read=True, caller_msg = caller_msg)
+                except Exception as e:
+                    #no record (router deleted): nothing to sync for the router
+                    #lock timeout 
+                    LOG.warning("sync_router_interfaces failed to lock router, err:%s", e)
+                    continue
+                grouped_router_interfaces = self.get_router_interfaces(r)
+                for nw_name in grouped_router_interfaces.keys():
+                    try:
+                        if not self.driver.router_l2node_link_exists(r['id'], r['name'], nw_name):
+                            router_interfaces = grouped_router_interfaces[nw_name]
+                            for ri in router_interfaces:
+                                try:
+                                    self.driver.add_router_interface(self, ri)
+                                except Exception as e:
+                                    LOG.error("sync_router_interfaces failed to add_router_interface msg:%s", e)
+                    except Exception as e:
+                        LOG.error("sync_router_interfaces failed to check link existence:%s--%s, msg:%s", r['name'], nw_name, e)
             
 class KaloomL3ServicePlugin(service_base.ServicePluginBase,
                             extraroute_db.ExtraRoute_db_mixin,
@@ -194,27 +238,36 @@ class KaloomL3ServicePlugin(service_base.ServicePluginBase,
     @log_helpers.log_method_call
     def create_router(self, context, router):
         """Create a new router entry in DB, and create it in vFabric."""
+        # create_router can't go in parallel with l3_sync (synchronize)
+        # parallelism of router operations
+        # shared (S) lock during transaction.
+        db_session = db_api.get_writer_session()
+        with db_session.begin(subtransactions=True):
+            caller_msg = 'create_router %s' % router['router']['name']
+            kaloom_db.get_Lock(db_session, kconst.L3_LOCK_NAME, read=True, caller_msg = caller_msg)
 
-        # Add router to the DB
-        new_router = super(KaloomL3ServicePlugin, self).create_router(
-            context,
-            router)
-        # create router on the vFabric
-        try:
-            self.driver.create_router(context, new_router)
-            return new_router
-        except Exception:
-            with excutils.save_and_reraise_exception():
-                super(KaloomL3ServicePlugin, self).delete_router(
-                    context,
-                    new_router['id']
-                )
+            # Add router to the DB
+            new_router = super(KaloomL3ServicePlugin, self).create_router(
+                context,
+                router)
+            # create router on the vFabric
+            try:
+                self.driver.create_router(context, new_router)
+                #Add router-id to the KaloomConcurrency table (later use for x/s lock)
+                kaloom_db.create_entry_for_Lock(new_router['id'])
+                return new_router
+            except Exception:
+                with excutils.save_and_reraise_exception():
+                    super(KaloomL3ServicePlugin, self).delete_router(
+                        context,
+                        new_router['id']
+                    )
 
     def _set_external_gateway(self, context, router_id, network_id,
                              original_router, new_router):
         try:
-            nw_name = utils._kaloom_nw_name(self.prefix, network_id, utils._get_network_name(network_id))
-        except NetworkNotFound as e:
+            nw_name = utils._kaloom_nw_name(self.prefix, network_id)
+        except n_exc.NetworkNotFound as e:
             msg = ('can not _set_external_gateway as no such network=%s, msg:%s' % (network_id, e))
             LOG.error(msg)
             return
@@ -256,8 +309,8 @@ class KaloomL3ServicePlugin(service_base.ServicePluginBase,
         # Get network information of the gateway subnet that is being removed for vFabric programming
         network_id = subnet['network_id']
         try:
-            nw_name = utils._kaloom_nw_name(self.prefix, network_id, utils._get_network_name(network_id))
-        except NetworkNotFound as e:
+            nw_name = utils._kaloom_nw_name(self.prefix, network_id)
+        except n_exc.NetworkNotFound as e:
             LOG.warning('can not _unset_external_gateway as no such network=%s, msg:%s', network_id, e)
             return new_router
 
@@ -297,18 +350,32 @@ class KaloomL3ServicePlugin(service_base.ServicePluginBase,
 
             elif external_gateway_info is not None:
                 if external_gateway_info == {}: # "unset --external-gateway" get called
-                    new_router = self._unset_external_gateway(context, router_id, router)
+                    # "unset --external-gateway" can't go in parallel with l3_sync_interface on same router
+                    # parallelism of router operations (on different router)
+                    # write (x) lock on "the router" during transaction.
+                    db_session = db_api.get_writer_session()
+                    with db_session.begin(subtransactions=True):
+                        caller_msg = 'unset_external_gateway on router id=%s name=%s' % (router_id, original_router['name'])
+                        kaloom_db.get_Lock(db_session, router_id, read=False, caller_msg = caller_msg)
+                        new_router = self._unset_external_gateway(context, router_id, router)
                 else: # "set --external-gateway" get called
                     network_id = external_gateway_info['network_id']
                     ##Kaloom does not support SNAT
                     if 'enable_snat' not in external_gateway_info.keys() or external_gateway_info['enable_snat'] == True:
                        raise n_exc.BadRequest(resource='router', msg='SNAT not supported in vFabric')
-                    # Update router DB
-                    new_router = super(KaloomL3ServicePlugin, self).update_router(context, router_id, router)
-                    # Modify router on the vFabric
-                    if len(new_router['external_gateway_info']['external_fixed_ips']) > 0:
-                       self._set_external_gateway(context, router_id, network_id,
-                                                 original_router, new_router)
+                    # "set --external-gateway" can't go in parallel with l3_sync_interface on same router
+                    # parallelism of router operations (on different router)
+                    # write (x) lock on "the router" during transaction.
+                    db_session = db_api.get_writer_session()
+                    with db_session.begin(subtransactions=True):
+                        caller_msg = 'set_external_gateway on router id=%s name=%s' % (router_id, original_router['name'])
+                        kaloom_db.get_Lock(db_session, router_id, read=False, caller_msg = caller_msg)
+                        # Update router DB
+                        new_router = super(KaloomL3ServicePlugin, self).update_router(context, router_id, router)
+                        # Modify router on the vFabric
+                        if len(new_router['external_gateway_info']['external_fixed_ips']) > 0:
+                            self._set_external_gateway(context, router_id, network_id,
+                                                       original_router, new_router)
             else:
                 # Update router DB
                 new_router = super(KaloomL3ServicePlugin, self).update_router(context, router_id, router)
@@ -322,17 +389,34 @@ class KaloomL3ServicePlugin(service_base.ServicePluginBase,
             #re-raise exception 
             with excutils.save_and_reraise_exception():
                msg = "update_router failed: %s" % (e)
-               LOG.exception(msg)
+               LOG.error(msg)
         
     @log_helpers.log_method_call
     def delete_router(self, context, router_id):
         """Delete an existing router from Kaloom vFabric as well as from the DB."""
-
         router = self.get_router(context, router_id)
-        # Delete router on the Kaloom vFabic
-        self.driver.delete_router(context, router_id, router)
-        # Delete on neutron database, in case former doesnot raise exception.
-        super(KaloomL3ServicePlugin, self).delete_router(context, router_id)
+        router_name = utils._kaloom_router_name(self.prefix, router_id, router['name'])
+        # delete_router can't go in parallel with l3_sync (synchronize)
+        # parallelism of router operations
+        # shared (S) lock during transaction.
+        db_session = db_api.get_writer_session()
+        with db_session.begin(subtransactions=True):
+            caller_msg = 'delete_router %s' % router_name
+            kaloom_db.get_Lock(db_session, kconst.L3_LOCK_NAME, read=True, caller_msg = caller_msg)
+
+            # Delete on neutron database
+            super(KaloomL3ServicePlugin, self).delete_router(context, router_id)
+
+            #delete router-id from the KaloomConcurrency table (no more future x/s lock)
+            kaloom_db.delete_entry_for_Lock(router_id)
+
+            # Delete router on the Kaloom vFabric, in case former does not raise exception
+            try:
+                self.driver.delete_router(context, router_id, router)
+            except Exception as e:
+                msg = "Failed to delete router %s on Kaloom vFabric, err:%s" % (router_name, e)
+                LOG.warning(msg)
+                # do not throw exception, cleanup process will clean stranded vfabric routers later.
 
     def _get_subnet_ip_from_router_info(self, router_info, subnet_id, network_id, gip):
         #In case of internal subnet, returns gip as the ip-address of router interface.
@@ -355,96 +439,108 @@ class KaloomL3ServicePlugin(service_base.ServicePluginBase,
     @log_helpers.log_method_call
     def add_router_interface(self, context, router_id, interface_info):
         """Add a subnet of a network to an existing router."""
-
-        new_router_ifc = super(KaloomL3ServicePlugin, self).add_router_interface(
-            context, router_id, interface_info)
-
         router = self.get_router(context, router_id)
-        core = directory.get_plugin()
+        # add_router_interface can't go in parallel with l3_sync_interface on same router
+        # parallelism of router operations (on different router)
+        # write (x) lock on "the router" during transaction.
+        db_session = db_api.get_writer_session()
+        with db_session.begin(subtransactions=True):
+            caller_msg = 'add_router_interface on router id=%s name=%s' % (router_id, router['name'])
+            kaloom_db.get_Lock(db_session, router_id, read=False, caller_msg = caller_msg)
+            new_router_ifc = super(KaloomL3ServicePlugin, self).add_router_interface(
+                context, router_id, interface_info)
 
-        # Get network info for the subnet that is being added to the router.
-        # Check if the interface information is by port-id or subnet-id
-        add_by_port, add_by_sub = self._validate_interface_info(interface_info)
-        if add_by_sub:
-            subnet = core.get_subnet(context, interface_info['subnet_id'])
-            port = core.get_port(context, new_router_ifc['port_id'])
-            #port has multiple (ip_address, subnet_id) 
-            ip_address = self._get_subnet_ip(port['fixed_ips'], interface_info['subnet_id'])
-        elif add_by_port:
-            port = core.get_port(context, interface_info['port_id'])
-            ip_address = port['fixed_ips'][0]['ip_address']
-            subnet_id = port['fixed_ips'][0]['subnet_id']
-            subnet = core.get_subnet(context, subnet_id)
+            core = directory.get_plugin()
 
-        # Package all the info needed for vFabric programming
-        network_id = subnet['network_id']
-        try:
-            nw_name = utils._kaloom_nw_name(self.prefix, network_id, utils._get_network_name(network_id))
-        except NetworkNotFound as e:
-            LOG.warning('Nothing to do in add_router_interface as no such network=%s, msg:%s', network_id, e)
-            return new_router_ifc
+            # Get network info for the subnet that is being added to the router.
+            # Check if the interface information is by port-id or subnet-id
+            add_by_port, add_by_sub = self._validate_interface_info(interface_info)
+            if add_by_sub:
+                subnet = core.get_subnet(context, interface_info['subnet_id'])
+                port = core.get_port(context, new_router_ifc['port_id'])
+                #port has multiple (ip_address, subnet_id)
+                ip_address = self._get_subnet_ip(port['fixed_ips'], interface_info['subnet_id'])
+            elif add_by_port:
+                port = core.get_port(context, interface_info['port_id'])
+                ip_address = port['fixed_ips'][0]['ip_address']
+                subnet_id = port['fixed_ips'][0]['subnet_id']
+                subnet = core.get_subnet(context, subnet_id)
 
-        router_info = copy.deepcopy(new_router_ifc)
-        router_info['nw_name'] = nw_name
-        router_info['ip_address'] = ip_address
-        router_info['name'] = router['name']
-        router_info['cidr'] = subnet['cidr']
-        router_info['gip'] = subnet['gateway_ip']
-        router_info['ip_version'] = subnet['ip_version']
+            # Package all the info needed for vFabric programming
+            network_id = subnet['network_id']
+            try:
+                nw_name = utils._kaloom_nw_name(self.prefix, network_id)
+            except n_exc.NetworkNotFound as e:
+                LOG.warning('Nothing to do in add_router_interface as no such network=%s, msg:%s', network_id, e)
+                return new_router_ifc
 
-        try:
-            self.driver.add_router_interface(context, router_info)
-            self._update_port_up(context, port['id'])
-            return new_router_ifc
-        except Exception:
-            with excutils.save_and_reraise_exception():
-                super(KaloomL3ServicePlugin, self).remove_router_interface(
-                    context,
-                    router_id,
-                    interface_info)
+            router_info = copy.deepcopy(new_router_ifc)
+            router_info['nw_name'] = nw_name
+            router_info['ip_address'] = ip_address
+            router_info['name'] = router['name']
+            router_info['cidr'] = subnet['cidr']
+            router_info['gip'] = subnet['gateway_ip']
+            router_info['ip_version'] = subnet['ip_version']
+
+            try:
+                self.driver.add_router_interface(context, router_info)
+                self._update_port_up(context, port['id'])
+                return new_router_ifc
+            except Exception:
+                with excutils.save_and_reraise_exception():
+                    super(KaloomL3ServicePlugin, self).remove_router_interface(
+                        context,
+                        router_id,
+                        interface_info)
 
     @log_helpers.log_method_call
     def remove_router_interface(self, context, router_id, interface_info):
         """Remove a subnet of a network from an existing router."""
-
-        # Get ip_address info for the subnet that is being deleted from the router.
-        # Check if the interface information is by port-id or subnet-id
         router = self.get_router(context, router_id)
-        core = directory.get_plugin()
-        add_by_port, add_by_sub = self._validate_interface_info(interface_info)
-        if add_by_sub:
-            subnet = core.get_subnet(context, interface_info['subnet_id'])
-            ip_address = self._get_subnet_ip_from_router_info(router, interface_info['subnet_id'], subnet['network_id'], subnet['gateway_ip'])
-        elif add_by_port:
-            port = core.get_port(context, interface_info['port_id'])
-            ip_address = port['fixed_ips'][0]['ip_address']
-            subnet_id = port['fixed_ips'][0]['subnet_id']
-            subnet = core.get_subnet(context, subnet_id)
+        # remove_router_interface can't go in parallel with l3_sync_interface on same router
+        # parallelism of router operations (on different router)
+        # write (x) lock on "the router" during transaction.
+        db_session = db_api.get_writer_session()
+        with db_session.begin(subtransactions=True):
+            caller_msg = 'remove_router_interface on router id=%s name=%s' % (router_id, router['name'])
+            kaloom_db.get_Lock(db_session, router_id, read=False, caller_msg = caller_msg)
+            # Get ip_address info for the subnet that is being deleted from the router.
+            # Check if the interface information is by port-id or subnet-id
+            core = directory.get_plugin()
+            add_by_port, add_by_sub = self._validate_interface_info(interface_info)
+            if add_by_sub:
+                subnet = core.get_subnet(context, interface_info['subnet_id'])
+                ip_address = self._get_subnet_ip_from_router_info(router, interface_info['subnet_id'], subnet['network_id'], subnet['gateway_ip'])
+            elif add_by_port:
+                port = core.get_port(context, interface_info['port_id'])
+                ip_address = port['fixed_ips'][0]['ip_address']
+                subnet_id = port['fixed_ips'][0]['subnet_id']
+                subnet = core.get_subnet(context, subnet_id)
 
-        router_ifc_to_del = (
-            super(KaloomL3ServicePlugin, self).remove_router_interface(
-                context,
-                router_id,
-                interface_info)
-            )
+            router_ifc_to_del = (
+                super(KaloomL3ServicePlugin, self).remove_router_interface(
+                    context,
+                    router_id,
+                    interface_info)
+                )
 
-        # Get network information of the subnet that is being removed
-        network_id = subnet['network_id']
-        try:
-            nw_name = utils._kaloom_nw_name(self.prefix, network_id, utils._get_network_name(network_id))
-        except NetworkNotFound as e:
-            LOG.warning('Nothing to do in remove_router_interface as no such network=%s, msg:%s', network_id, e)
-            return
+            # Get network information of the subnet that is being removed
+            network_id = subnet['network_id']
+            try:
+                nw_name = utils._kaloom_nw_name(self.prefix, network_id)
+            except n_exc.NetworkNotFound as e:
+                LOG.warning('Nothing to do in remove_router_interface as no such network=%s, msg:%s', network_id, e)
+                return
 
-        router_info = copy.deepcopy(router_ifc_to_del)
-        router_info['nw_name'] = nw_name
-        router_info['name'] = router['name']
-        router_info['ip_address'] = ip_address
-        router_info['ip_version'] = subnet['ip_version']
+            router_info = copy.deepcopy(router_ifc_to_del)
+            router_info['nw_name'] = nw_name
+            router_info['name'] = router['name']
+            router_info['ip_address'] = ip_address
+            router_info['ip_version'] = subnet['ip_version']
 
-        try:
-            self.driver.remove_router_interface(context, router_info)
-            return router_ifc_to_del
-        except Exception as e:
-            msg = "remove_router_interface failed in vfabric: %s" % (e)
-            LOG.exception(msg)
+            try:
+                self.driver.remove_router_interface(context, router_info)
+                return router_ifc_to_del
+            except Exception as e:
+                msg = "remove_router_interface failed in vfabric: %s" % (e)
+                LOG.error(msg)

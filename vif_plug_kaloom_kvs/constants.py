@@ -11,14 +11,10 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-PLUGIN_NAME = 'ovs'
+PLUGIN_NAME = 'kvs_kaloom'
 
-KVS_VHOSTUSER_INTERFACE_TYPE = 'dpdkvhostuser'
-KVS_VHOSTUSER_CLIENT_INTERFACE_TYPE = 'dpdkvhostuserclient'
 KVS_VHOSTUSER_PREFIX = 'vhu'
 
-KVS_DATAPATH_SYSTEM = 'system'
-KVS_DATAPATH_NETDEV = 'netdev'
 KVS_SERVER= 'localhost:10515'
 VHOST_SOCK_OWNER = 'qemu:kvm'
 VHOST_SOCK_PERM = '0664'

@@ -1,23 +1,31 @@
 FROM registry.access.redhat.com/rhosp13/openstack-neutron-server
 MAINTAINER Kaloom Inc. <openstack@kaloom.com>
-LABEL name="rhosp13/openstack-neutron-server-kaloom-plugin" maintainer="openstack@kaloom.com" vendor="Kaloom" version="0.1" release="0" \
+
+ARG VCS_REF
+ARG BUILD_DATE
+ARG KALOOM_VERSION
+ARG KALOOM_RELEASE
+
+LABEL name="rhosp13/openstack-neutron-server-kaloom-plugin" maintainer="openstack@kaloom.com" vendor="Kaloom" \
       summary="Red Hat OpenStack Platform 13.0 neutron-server Kaloom Plugin" \
-      description="Red Hat OpenStack Platform 13.0 neutron-server Kaloom Plugin"
+      description="Red Hat OpenStack Platform 13.0 neutron-server Kaloom Plugin" \
+      authoritative-source-url="" \
+      batch="" \
+      com.redhat.build-host="" \
+      vcs-ref="" \
+      build-date=""
+LABEL org.label-schema.vcs-ref=$VCS_REF
+LABEL org.label-schema.build-date=$BUILD_DATE
+LABEL version=$KALOOM_VERSION
+LABEL release=$KALOOM_RELEASE
 
 # switch to root and patch.
 USER root
-ENV RPM_VERSION RPM_VERSION_VALUE
-ENV RPM_URL SERVER_URL/REPO_PATH/networking_kaloom-$RPM_VERSION-1.noarch.rpm
-ENV RPM_SERVER_USER USER_VALUE
-ENV RPM_SERVER_PASS PASS_VALUE
-RUN curl https://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm >/tmp/epel-release-latest-7.noarch.rpm \
-    && rpm -ivh /tmp/epel-release-latest-7.noarch.rpm \
-    && rm -f /tmp/epel-release-latest-7.noarch.rpm \
-    && curl -L -u $RPM_SERVER_USER:$RPM_SERVER_PASS $RPM_URL > /tmp/networking_kaloom-$RPM_VERSION-1.noarch.rpm \
-    && yum localinstall -y /tmp/networking_kaloom-*.noarch.rpm \
+ADD networking_kaloom-*.noarch.rpm /tmp/
+RUN yum localinstall -y /tmp/networking_kaloom-*.noarch.rpm \
     && yum clean all \
-    && rm -f /tmp/networking_kaloom-$RPM_VERSION-1.noarch.rpm \
-    && echo -e "[KALOOM]\n# Kaloom VFabric controller IP\nkaloom_host=\n# Kaloom VFabric controller netconf port\nkaloom_port=\n# Kaloom VFabric controller username\nkaloom_username=\n# Kaloom private-key file to authenticate to VFabric Controller\nkaloom_private_key_file =\n##Kaloom password to authenticate to VFabric controller (as fallback)\nkaloom_password=\n##\n##For L3 Service plugin\n# Sync interval in seconds between L3 Service plugin and Kaloom vFabric.\n# If not set, a value of 180 seconds is assumed. (integer value)\nl3_sync_interval = 36000\n# Toggle to enable cleanup of routers by the sync worker.\n#If not set, a value of "False" is assumed. (boolean value: true, False)\nenable_cleanup = False\n" >> /etc/neutron/plugins/ml2/ml2_conf.ini
+    && rm -f /tmp/networking_kaloom-*.noarch.rpm \
+    && echo -e "[KALOOM]\n# Kaloom VFabric controller IP\nkaloom_host=\n# Kaloom VFabric controller netconf port\nkaloom_port=\n# Kaloom VFabric controller username\nkaloom_username=\n# Kaloom private-key file to authenticate to VFabric Controller\nkaloom_private_key_file =\n##Kaloom password to authenticate to VFabric controller (as fallback)\nkaloom_password=\n##\n##For L3 Service plugin\n# Sync interval in seconds between L3 Service plugin and Kaloom vFabric.\n# If not set, a value of 180 seconds is assumed. (integer value)\nl3_sync_interval = 36000\n" >> /etc/neutron/plugins/ml2/ml2_conf.ini
 
 #Add required license as text file
 RUN mkdir /licenses

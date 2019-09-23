@@ -138,29 +138,27 @@ class KaloomKVSManager(amb.CommonAgentManagerBase):
         return ports
 
     def get_devices_modified_timestamps(self, devices):
-        LOG.info("KaloomKVSManager get_devices_modified_timestamps called ")
         _ports=kvs_net.listPorts(self.vhostuser_socket_dir, a_const.KVS_VHOSTUSER_PREFIX)
         ports = self._convert_ns_dev_to_partial_portid(_ports)
         timestamps={}
         for d in devices:
            if d in ports.keys():
               timestamps[d]=ports[d]
-        LOG.info("%s",timestamps)
+        LOG.debug("KaloomKVSManager get_devices_modified_timestamps %s",timestamps)
         return timestamps
 
     def get_all_devices(self):
-        LOG.info("KaloomKVSManager get_all_devices called ")
         devices = set()
         _ports=kvs_net.listPorts(self.vhostuser_socket_dir, a_const.KVS_VHOSTUSER_PREFIX)
         ports = self._convert_ns_dev_to_partial_portid(_ports)
         for name in ports.keys():
            devices.add(name)
-        LOG.info("KaloomKVSManager get_all_devices %(devices)s ", {"devices" : devices})
+        LOG.debug("KaloomKVSManager get_all_devices %(devices)s ", {"devices" : devices})
         return devices
 
 
     def get_agent_id(self):
-        if not self.kvs_id:
+        if self.kvs_id is None:
             LOG.error("Unable to obtain unique ID. "
                       "Agent terminated!")
             sys.exit(1)
@@ -170,7 +168,6 @@ class KaloomKVSManager(amb.CommonAgentManagerBase):
     def get_agent_configurations(self):
         configurations = {'bridge_mappings': self.bridge_mappings,
                           'interface_mappings': self.interface_mappings,
-                          'datapath_type':'netdev',
                           'vhostuser_socket_dir':self.vhostuser_socket_dir
                          }
         return configurations
@@ -188,7 +185,7 @@ class KaloomKVSManager(amb.CommonAgentManagerBase):
         return self.agent_api
 
     def _get_iptables_manager(self, sg_agent):
-        if not sg_agent:
+        if sg_agent is None:
             return None
         if cfg.CONF.SECURITYGROUP.firewall_driver in IPTABLES_DRIVERS:
             return sg_agent.firewall.iptables

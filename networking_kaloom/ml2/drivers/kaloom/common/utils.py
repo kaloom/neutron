@@ -17,23 +17,49 @@ from networking_kaloom.ml2.drivers.kaloom.db import kaloom_db
 from oslo_db import exception as db_exc
 from eventlet import greenthread
 from oslo_log import log
+from xml.sax.saxutils import escape
 
 LOG = log.getLogger(__name__)
+
+def xmlescape(data):
+    #escapes &, <, > by default and also ', " as dict provided.
+    return escape(data, entities={
+        "'": "&apos;",
+        "\"": "&quot;"
+    })
 
 def _get_network_name(network_id):
     ctx = nctx.get_admin_context()
     return directory.get_plugin().get_network(ctx, network_id)['name'] 
 
-def _kaloom_nw_name(prefix, network_id, name):
+def _kaloom_nw_name(prefix, network_id):
     """Generate an kaloom specific name for this network.
 
     Use a unique name so that OpenStack created networks
     can be distinguishged from the user created networks
+    on Kaloom vFabric. This serves for node_id of nw.
+    """
+    return prefix + network_id
+
+def _kaloom_gui_nw_name(prefix, network_id, name):
+    """Generate an kaloom specific name for this network.
+
+    Use a unique name so that OpenStack created networks
+    can be distinguishged from the user created networks
+    on Kaloom vFabric. xml control characters such as:
+    ", <, >, &, ' are escaped to result valid xml request later.
+    """
+    return prefix + network_id + '.' + xmlescape(name)
+
+def _kaloom_router_name(prefix, router_id, name):
+    """Generate an kaloom specific name for this router.
+
+    Use a unique name so that OpenStack created routers
+    can be distinguishged from the user created routers
     on Kaloom vFabric. Replace spaces with underscores for CLI compatibility
     """
-    ##until nw rename (openstack network set) not captured in ML2, dont use name in vfabric GUI.
-    #return prefix + network_id + '.' + name.replace(' ', '_')
-    return prefix + network_id
+    return prefix + router_id + '.' + name.replace(' ', '_')
+
 
 def tp_operation_lock(host, network_id):
     """ concurrent attachments, detachments, attachments/detachments, detachments/attachments 

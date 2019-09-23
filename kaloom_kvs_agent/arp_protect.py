@@ -83,9 +83,9 @@ def setup_arp_spoofing_protection(vif, port_details, socket_dir):
     delete = existing_set - new_set
 
     for (ip,mac) in setup:
-        kvs_net.add_anti_spoofing_rule(port_index, mac, ip)
+        kvs_net.add_anti_spoofing_rule(port_index, mac, ip) #vlan = 0
     for (ip,mac) in delete:
-        kvs_net.delete_anti_spoofing_rule(port_index, mac, ip)
+        kvs_net.delete_anti_spoofing_rule(port_index, mac, ip) #vlan = 0
 
 def has_zero_prefixlen_address(ip_addresses):
     return any(netaddr.IPNetwork(ip).prefixlen == 0 for ip in ip_addresses)
@@ -140,12 +140,12 @@ def _delete_arp_spoofing_protection(port_index):
     # list_anti_spoofing_rule
     #Single port represents parent-port and subports in case of trunk. 
     #parent-port rules are associated with vlan=0, and subport rules are associated with other vlans.
-    #Here, we want to delete all rules associated to parent-port and subports. 
-    pairs = kvs_net.list_anti_spoofing_rules(port_index)
+    #Here, we want to delete all rules associated to only parent-port. 
+    pairs = kvs_net.list_anti_spoofing_rules(port_index, vlan = 0)
     if pairs is not None:
        for pair in pairs:
            # delete one by one
-           kvs_net.delete_anti_spoofing_rule(port_index, pair['mac'], pair['ip'])
+           kvs_net.delete_anti_spoofing_rule(port_index, pair['mac'], pair['ip'], vlan = 0 )
 
 
 def delete_unreferenced_arp_protection(current_vifs, socket_dir, file_prefix):

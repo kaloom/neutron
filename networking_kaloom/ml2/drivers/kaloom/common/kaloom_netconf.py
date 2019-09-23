@@ -11,20 +11,19 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import paramiko
 import socket
 
 from oslo_log import log
 from oslo_utils import excutils
 from oslo_concurrency import lockutils
-from time import sleep
 import xml.dom.minidom
 from lxml import objectify
 
 from eventlet import event
 from eventlet import greenthread
+from eventlet import Timeout
+import paramiko #neutron/cmd/eventlet/__init__.py already has monkey_patch() that turns blocking chan.recv into non-blocking (green) mode.
 from neutron_lib import worker
-from eventlet import queue
 from networking_kaloom.ml2.drivers.kaloom.common import constants as kconst
 
 L2T_NS = "urn:ietf:params:xml:ns:yang:ietf-l2-topology"
@@ -85,29 +84,38 @@ MESG_HELLO = b'''
 
 TERMINATOR = b']]>]]>'
 
-REQ_GET = """
-<?xml version="1.0" encoding="UTF-8"?>
-<rpc message-id="message_id" xmlns="urn:ietf:params:xml:ns:netconf:base:1.0">
-<get/>
-</rpc>
-"""
-
-REQ_GET_CONFIG = """
-<?xml version="1.0" encoding="UTF-8"?>
-<rpc message-id="message_id" xmlns="urn:ietf:params:xml:ns:netconf:base:1.0">
-<get-config/>
-</rpc>
-"""
-
 L3_command_dict={
 'LIST_ROUTER' : """
 <?xml version="1.0" encoding="UTF-8"?>
 <rpc message-id="message_id" xmlns="urn:ietf:params:xml:ns:netconf:base:1.0">
-<get>
-        <filter type="subtree">
+<get xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" xmlns:l3t="urn:ietf:params:xml:ns:yang:ietf-l3-unicast-topology">
+<filter type="subtree">
     <networks xmlns="urn:ietf:params:xml:ns:yang:ietf-network">
         <network>
-                <nw:network-id>3</nw:network-id>
+                <network-id>3</network-id>
+                <node>
+                   <node-id/>
+                   <l3t:l3-node-attributes/>
+                </node>
+        </network>
+    </networks>
+</filter>
+</get>
+</rpc>
+""",
+'GET_ROUTER_ID' : """
+<?xml version="1.0" encoding="UTF-8"?>
+<rpc message-id="message_id" xmlns="urn:ietf:params:xml:ns:netconf:base:1.0">
+<get>
+        <filter type="subtree">
+    <networks xmlns="urn:ietf:params:xml:ns:yang:ietf-network" xmlns:l3t="urn:ietf:params:xml:ns:yang:ietf-l3-unicast-topology">
+        <network>
+                <network-id>3</network-id>
+                <node>
+                  <l3t:l3-node-attributes>
+                    <l3t:name>%(name)s</l3t:name>
+                  </l3t:l3-node-attributes>
+                </node>
         </network>
     </networks>
         </filter>
@@ -115,34 +123,35 @@ L3_command_dict={
 </rpc>
 """,
 
+
 'CREATE_ROUTER' : """
 <?xml version="1.0" encoding="UTF-8"?>
-<rpc message-id="message_id" xmlns="urn:ietf:params:xml:ns:netconf:base:1.1">
+<rpc message-id="message_id" xmlns="urn:ietf:params:xml:ns:netconf:base:1.0">
   <create-router xmlns="urn:kaloom:faas:vfabric-l3-unicast-topology">
     <network-id>3</network-id>
-    <name>router_name</name>
+    <name>%(router_name)s</name>
   </create-router>
 </rpc>
 """,
 
 'DELETE_ROUTER' : """
 <?xml version="1.0" encoding="UTF-8"?>
-<rpc message-id="message_id" xmlns="urn:ietf:params:xml:ns:netconf:base:1.1">
+<rpc message-id="message_id" xmlns="urn:ietf:params:xml:ns:netconf:base:1.0">
   <delete-router xmlns="urn:kaloom:faas:vfabric-l3-unicast-topology">
     <network-id>3</network-id>
-    <node-id>router_node_id</node-id>
+    <node-id>%(router_node_id)s</node-id>
   </delete-router>
 </rpc>
 """,
 
 'ATTACH_ROUTER' : """
 <?xml version="1.0" encoding="UTF-8"?>
-<rpc message-id="message_id" xmlns="urn:ietf:params:xml:ns:netconf:base:1.1">
+<rpc message-id="message_id" xmlns="urn:ietf:params:xml:ns:netconf:base:1.0">
   <attach-l3node-to-l2node xmlns="urn:kaloom:faas:vfabric-l3-unicast-topology">
     <l3-network-id>3</l3-network-id>
-    <l3-node-id>router_node_id</l3-node-id>
+    <l3-node-id>%(router_node_id)s</l3-node-id>
     <l2-network-id>2</l2-network-id>
-    <l2-node-id>l2_node_id</l2-node-id>
+    <l2-node-id>%(l2_node_id)s</l2-node-id>
     <mtu>1500</mtu>
   </attach-l3node-to-l2node>
 </rpc>
@@ -150,18 +159,18 @@ L3_command_dict={
 
 'DETACH_ROUTER' : """
 <?xml version="1.0" encoding="UTF-8"?>
-<rpc message-id="message_id" xmlns="urn:ietf:params:xml:ns:netconf:base:1.1">
+<rpc message-id="message_id" xmlns="urn:ietf:params:xml:ns:netconf:base:1.0">
   <detach-l3node-from-l2node xmlns="urn:kaloom:faas:vfabric-l3-unicast-topology">
     <l3-network-id>3</l3-network-id>
-    <l3-node-id>router_node_id</l3-node-id>
+    <l3-node-id>%(router_node_id)s</l3-node-id>
     <l2-network-id>2</l2-network-id>
-    <l2-node-id>l2_node_id</l2-node-id>
+    <l2-node-id>%(l2_node_id)s</l2-node-id>
   </detach-l3node-from-l2node>
 </rpc>
 """,
 'addIPv4AddressToInterface' : """
 <?xml version="1.0" encoding="UTF-8"?>
-<rpc message-id="message_id" xmlns="urn:ietf:params:xml:ns:netconf:base:1.1">
+<rpc message-id="message_id" xmlns="urn:ietf:params:xml:ns:netconf:base:1.0">
  <edit-config>
     <target>
      <running />
@@ -172,14 +181,14 @@ L3_command_dict={
        <network>
          <network-id>3</network-id>
          <node>
-           <node-id>router_node_id</node-id>
+           <node-id>%(router_node_id)s</node-id>
            <interfaces xmlns="urn:kaloom:faas:vfabric-interfaces">
              <interface>
-             <name>interface_name</name>
+             <name>%(interface_name)s</name>
                <ipv4 xmlns="urn:kaloom:faas:vfabric-ip">
                  <address xmlns:a="urn:ietf:params:xml:ns:netconf:base:1.0" a:operation="create">
-                   <ip>ip_address</ip>
-                   <prefix-length>prefix_length</prefix-length>
+                   <ip>%(ip_address)s</ip>
+                   <prefix-length>%(prefix_length)s</prefix-length>
                  </address>
                </ipv4>
              </interface>
@@ -193,24 +202,24 @@ L3_command_dict={
 """,
 'deleteIPv4AddressFromInterface' : """
 <?xml version="1.0" encoding="UTF-8"?>
-<rpc message-id="message_id" xmlns="urn:ietf:params:xml:ns:netconf:base:1.1">
+<rpc message-id="message_id" xmlns="urn:ietf:params:xml:ns:netconf:base:1.0">
   <edit-config>
      <target>
      <running />
    </target>
    <default-operation>none</default-operation>
-    <config xmlns:xc="urn:ietf:params:xml:ns:netconf:base:1.1" xmlns:nd="urn:ietf:params:xml:ns:yang:ietf-network" xmlns:vi="urn:kaloom:faas:vfabric-interfaces" xmlns:vip="urn:kaloom:faas:vfabric-ip">
+    <config xmlns:xc="urn:ietf:params:xml:ns:netconf:base:1.0" xmlns:nd="urn:ietf:params:xml:ns:yang:ietf-network" xmlns:vi="urn:kaloom:faas:vfabric-interfaces" xmlns:vip="urn:kaloom:faas:vfabric-ip">
       <nd:networks>
         <nd:network>
           <nd:network-id>3</nd:network-id>
           <nd:node>
-            <nd:node-id>router_node_id</nd:node-id>
+            <nd:node-id>%(router_node_id)s</nd:node-id>
             <vi:interfaces>
               <vi:interface>
-                <vi:name>interface_name</vi:name>
+                <vi:name>%(interface_name)s</vi:name>
                 <vip:ipv4>
                   <vip:address xc:operation="remove">
-                    <vip:ip>ip_address</vip:ip>
+                    <vip:ip>%(ip_address)s</vip:ip>
                   </vip:address>
                 </vip:ipv4>
               </vi:interface>
@@ -224,7 +233,7 @@ L3_command_dict={
 """,
 'addIPv6AddressToInterface' : """
 <?xml version="1.0" encoding="UTF-8"?>
-<rpc message-id="message_id" xmlns="urn:ietf:params:xml:ns:netconf:base:1.1">
+<rpc message-id="message_id" xmlns="urn:ietf:params:xml:ns:netconf:base:1.0">
  <edit-config>
     <target>
      <running />
@@ -235,14 +244,14 @@ L3_command_dict={
        <network>
          <network-id>3</network-id>
          <node>
-           <node-id>router_node_id</node-id>
+           <node-id>%(router_node_id)s</node-id>
            <interfaces xmlns="urn:kaloom:faas:vfabric-interfaces">
              <interface>
-             <name>interface_name</name>
+             <name>%(interface_name)s</name>
                <ipv6 xmlns="urn:kaloom:faas:vfabric-ip">
                  <address xmlns:a="urn:ietf:params:xml:ns:netconf:base:1.0" a:operation="create">
-                   <ip>ip_address</ip>
-                   <prefix-length>prefix_length</prefix-length>
+                   <ip>%(ip_address)s</ip>
+                   <prefix-length>%(prefix_length)s</prefix-length>
                  </address>
                </ipv6>
              </interface>
@@ -256,7 +265,7 @@ L3_command_dict={
 """,
 'deleteIPv6AddressFromInterface' : """
 <?xml version="1.0" encoding="UTF-8"?>
-<rpc message-id="message_id" xmlns="urn:ietf:params:xml:ns:netconf:base:1.1">
+<rpc message-id="message_id" xmlns="urn:ietf:params:xml:ns:netconf:base:1.0">
  <edit-config>
     <target>
      <running />
@@ -267,13 +276,13 @@ L3_command_dict={
        <network>
          <network-id>3</network-id>
          <node>
-           <node-id>router_node_id</node-id>
+           <node-id>%(router_node_id)s</node-id>
            <interfaces xmlns="urn:kaloom:faas:vfabric-interfaces">
              <interface>
-             <name>interface_name</name>
+             <name>%(interface_name)s</name>
                <ipv6 xmlns="urn:kaloom:faas:vfabric-ip">
                  <address xmlns:a="urn:ietf:params:xml:ns:netconf:base:1.0" a:operation="remove">
-                   <ip>ip_address</ip>
+                   <ip>%(ip_address)s</ip>
                  </address>
                </ipv6>
              </interface>
@@ -287,18 +296,18 @@ L3_command_dict={
 """,
 'addIPv4StaticRoute':"""
 <?xml version="1.0" encoding="UTF-8"?>
-<rpc message-id="message_id" xmlns="urn:ietf:params:xml:ns:netconf:base:1.1">
+<rpc message-id="message_id" xmlns="urn:ietf:params:xml:ns:netconf:base:1.0">
   <edit-config>
      <target>
      <running />
    </target>
    <default-operation>none</default-operation>
-    <config xmlns:xc="urn:ietf:params:xml:ns:netconf:base:1.1" xmlns:nd="urn:ietf:params:xml:ns:yang:ietf-network" xmlns:vr="urn:kaloom:faas:vfabric-routing" xmlns:v4ur="urn:kaloom:faas:vfabric-ipv4-unicast-routing">
+    <config xmlns:xc="urn:ietf:params:xml:ns:netconf:base:1.0" xmlns:nd="urn:ietf:params:xml:ns:yang:ietf-network" xmlns:vr="urn:kaloom:faas:vfabric-routing" xmlns:v4ur="urn:kaloom:faas:vfabric-ipv4-unicast-routing">
       <nd:networks>
         <nd:network>
           <nd:network-id>3</nd:network-id>
           <nd:node>
-            <nd:node-id>router_node_id</nd:node-id>
+            <nd:node-id>%(router_node_id)s</nd:node-id>
             <vr:routing>
               <vr:control-plane-protocols>
                 <vr:control-plane-protocol>
@@ -307,9 +316,9 @@ L3_command_dict={
                   <vr:static-routes>
                     <v4ur:ipv4>
                       <v4ur:route xc:operation="create">
-                        <v4ur:destination-prefix>destination_prefix</v4ur:destination-prefix>
+                        <v4ur:destination-prefix>%(destination_prefix)s</v4ur:destination-prefix>
                         <v4ur:next-hop>
-                          <v4ur:next-hop-address>next_hop_address</v4ur:next-hop-address>
+                          <v4ur:next-hop-address>%(next_hop_address)s</v4ur:next-hop-address>
                         </v4ur:next-hop>
                       </v4ur:route>
                     </v4ur:ipv4>
@@ -326,18 +335,18 @@ L3_command_dict={
 """,
 'addIPv6StaticRoute':"""
 <?xml version="1.0" encoding="UTF-8"?>
-<rpc message-id="message_id" xmlns="urn:ietf:params:xml:ns:netconf:base:1.1">
+<rpc message-id="message_id" xmlns="urn:ietf:params:xml:ns:netconf:base:1.0">
   <edit-config>
      <target>
      <running />
    </target>
    <default-operation>none</default-operation>
-    <config xmlns:xc="urn:ietf:params:xml:ns:netconf:base:1.1" xmlns:nd="urn:ietf:params:xml:ns:yang:ietf-network" xmlns:vr="urn:kaloom:faas:vfabric-routing" xmlns:v6ur="urn:kaloom:faas:vfabric-ipv6-unicast-routing">
+    <config xmlns:xc="urn:ietf:params:xml:ns:netconf:base:1.0" xmlns:nd="urn:ietf:params:xml:ns:yang:ietf-network" xmlns:vr="urn:kaloom:faas:vfabric-routing" xmlns:v6ur="urn:kaloom:faas:vfabric-ipv6-unicast-routing">
       <nd:networks>
         <nd:network>
           <nd:network-id>3</nd:network-id>
           <nd:node>
-            <nd:node-id>router_node_id</nd:node-id>
+            <nd:node-id>%(router_node_id)s</nd:node-id>
             <vr:routing>
               <vr:control-plane-protocols>
                 <vr:control-plane-protocol>
@@ -346,9 +355,9 @@ L3_command_dict={
                   <vr:static-routes>
                     <v6ur:ipv6>
                       <v6ur:route xc:operation="create">
-                        <v6ur:destination-prefix>destination_prefix</v6ur:destination-prefix>
+                        <v6ur:destination-prefix>%(destination_prefix)s</v6ur:destination-prefix>
                         <v6ur:next-hop>
-                          <v6ur:next-hop-address>next_hop_address</v6ur:next-hop-address>
+                          <v6ur:next-hop-address>%(next_hop_address)s</v6ur:next-hop-address>
                         </v6ur:next-hop>
                       </v6ur:route>
                     </v6ur:ipv6>
@@ -365,18 +374,18 @@ L3_command_dict={
 """,
 'deleteIPv4StaticRoute':"""
 <?xml version="1.0" encoding="UTF-8"?>
-<rpc message-id="message_id" xmlns="urn:ietf:params:xml:ns:netconf:base:1.1">
+<rpc message-id="message_id" xmlns="urn:ietf:params:xml:ns:netconf:base:1.0">
   <edit-config>
      <target>
      <running />
    </target>
    <default-operation>none</default-operation>
-    <config xmlns:xc="urn:ietf:params:xml:ns:netconf:base:1.1" xmlns:nd="urn:ietf:params:xml:ns:yang:ietf-network" xmlns:vr="urn:kaloom:faas:vfabric-routing" xmlns:v4ur="urn:kaloom:faas:vfabric-ipv4-unicast-routing">
+    <config xmlns:xc="urn:ietf:params:xml:ns:netconf:base:1.0" xmlns:nd="urn:ietf:params:xml:ns:yang:ietf-network" xmlns:vr="urn:kaloom:faas:vfabric-routing" xmlns:v4ur="urn:kaloom:faas:vfabric-ipv4-unicast-routing">
       <nd:networks>
         <nd:network>
           <nd:network-id>3</nd:network-id>
           <nd:node>
-            <nd:node-id>router_node_id</nd:node-id>
+            <nd:node-id>%(router_node_id)s</nd:node-id>
             <vr:routing>
               <vr:control-plane-protocols>
                 <vr:control-plane-protocol>
@@ -385,7 +394,7 @@ L3_command_dict={
                   <vr:static-routes>
                     <v4ur:ipv4>
                       <v4ur:route xc:operation="remove">
-                        <v4ur:destination-prefix>destination_prefix</v4ur:destination-prefix>
+                        <v4ur:destination-prefix>%(destination_prefix)s</v4ur:destination-prefix>
                       </v4ur:route>
                     </v4ur:ipv4>
                   </vr:static-routes>
@@ -401,18 +410,18 @@ L3_command_dict={
 """,
 'deleteIPv6StaticRoute':"""
 <?xml version="1.0" encoding="UTF-8"?>
-<rpc message-id="message_id" xmlns="urn:ietf:params:xml:ns:netconf:base:1.1">
+<rpc message-id="message_id" xmlns="urn:ietf:params:xml:ns:netconf:base:1.0">
   <edit-config>
      <target>
      <running />
    </target>
    <default-operation>none</default-operation>
-    <config xmlns:xc="urn:ietf:params:xml:ns:netconf:base:1.1" xmlns:nd="urn:ietf:params:xml:ns:yang:ietf-network" xmlns:vr="urn:kaloom:faas:vfabric-routing" xmlns:v6ur="urn:kaloom:faas:vfabric-ipv6-unicast-routing">
+    <config xmlns:xc="urn:ietf:params:xml:ns:netconf:base:1.0" xmlns:nd="urn:ietf:params:xml:ns:yang:ietf-network" xmlns:vr="urn:kaloom:faas:vfabric-routing" xmlns:v6ur="urn:kaloom:faas:vfabric-ipv6-unicast-routing">
       <nd:networks>
         <nd:network>
           <nd:network-id>3</nd:network-id>
           <nd:node>
-            <nd:node-id>router_node_id</nd:node-id>
+            <nd:node-id>%(router_node_id)s</nd:node-id>
             <vr:routing>
               <vr:control-plane-protocols>
                 <vr:control-plane-protocol>
@@ -421,7 +430,7 @@ L3_command_dict={
                   <vr:static-routes>
                     <v6ur:ipv6>
                       <v6ur:route xc:operation="remove">
-                        <v6ur:destination-prefix>destination_prefix</v6ur:destination-prefix>
+                        <v6ur:destination-prefix>%(destination_prefix)s</v6ur:destination-prefix>
                       </v6ur:route>
                     </v6ur:ipv6>
                   </vr:static-routes>
@@ -448,15 +457,37 @@ L3_command_dict={
      <network>
        <network-id>3</network-id>
        <node>
-         <node-id>router_node_id</node-id>
+         <node-id>%(router_node_id)s</node-id>
          <l3-node-attributes xmlns="urn:ietf:params:xml:ns:yang:ietf-l3-unicast-topology" xmlns:a="urn:ietf:params:xml:ns:netconf:base:1.0" a:operation="merge">
-            <name>router_name</name>
+            <name>%(router_name)s</name>
          </l3-node-attributes>
        </node>
      </network>
     </networks>
   </config>
  </edit-config>
+</rpc>
+""",
+'GET_ROUTER_INTERFACE_INFO' : """
+<?xml version="1.0" encoding="UTF-8"?>
+<rpc message-id="message_id" >
+<get xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" xmlns:l3t="urn:ietf:params:xml:ns:yang:ietf-l3-unicast-topology" xmlns:vif="urn:kaloom:faas:vfabric-interfaces" xmlns:nt="urn:ietf:params:xml:ns:yang:ietf-network-topology">
+<filter type="subtree">
+ <networks xmlns="urn:ietf:params:xml:ns:yang:ietf-network">
+  <network>
+     <network-id>3</network-id>
+     <node>
+       <node-id/>
+       <l3t:l3-node-attributes>
+          <l3t:name>%(router_name)s</l3t:name>
+       </l3t:l3-node-attributes>
+       <nt:termination-point/>
+       <vif:interfaces/>
+     </node>
+   </network>
+ </networks>
+</filter>
+</get>
 </rpc>
 """,
 }
@@ -468,70 +499,81 @@ class KaloomNetconfRecv(worker.BaseWorker):
         super(KaloomNetconfRecv, self).__init__(worker_process_count=1)
         self.client = client
         self.chan = chan
-        self.msg_queues = {}
+        self.msg_events = {}
+        self.msg_events_stale = {}
         self._thread = None
         self._running = False
-        self.done = event.Event()
+        self.done = None
 
     def is_running(self):
         return self._running
 
     def _on_done(self, gt, *args, **kwargs):
-        self._thread = None
         self._running = False
-        self.chan = None
-        #no way to check chan status (on caller side), so force to recreate by closing transport
-        self.client.close()
+        #force callbacks not to wait anymore
+        self.msg_exception_to_callbacks()
 
+        self._thread = None
         #send done event
         self.done.send(True)
 
     def start(self):
-        if self._thread is not None:
-            LOG.warning('kaloom netconf receiver has already been started')
+        if self._running:
             return
+        if self._thread is not None:
+            self.wait() # wait until running thread complete _on_done
 
         LOG.debug("kaloom netconf receiver loop started")
         super(KaloomNetconfRecv, self).start()
         self._running = True
+        self.done = event.Event()
         self._thread = greenthread.spawn(self._recv_loop)
         self._thread.link(self._on_done)
+        greenthread.sleep(0) # yield turn to spawned thread immediately.
 
     def stop(self, graceful=True):
-        if graceful:
-            self._running = False
-            #release recv block by closing chan
-            if self.chan is not None:
-               self.chan.close()
-        else:
-            #close chan and kill thread
-            if self.chan is not None:
-               self.chan.close()
-            self._thread.kill()
+        self._running = False
+        #release recv block by closing chan
+        if self.chan is not None:
+           self.chan.close()
+        if not graceful:
+           #kill thread
+           self._thread.kill()
 
     def wait(self):
         return self.done.wait()
 
     def reset(self):
-        #do not call reset
-        pass
+        self.stop()
+        self.wait()
+        #don't start here, start will be on first msq queue in add_callback_event 
 
     def update_chan(self, chan):
         self.chan = chan
  
-    def add_callback_queue(self, msgid, q):
-        if msgid in self.msg_queues.keys():
-           error_msg = 'add_callback_queue: duplicate msgid %s exists.' % msgid
+    def add_callback_event(self, msgid, evt):
+        if msgid in self.msg_events.keys():
+           error_msg = 'add_callback_event: duplicate msgid %s exists.' % msgid
            LOG.error(error_msg) 
            raise ValueError(error_msg)
         else:
-           self.msg_queues[msgid] = q
+           self.msg_events[msgid] = evt
+           # starts receiver thread, if not already running.
+           self.start()
 
-    def del_callback_queue(self, msgid, q):
+    def del_callback_event(self, msgid):
         try:
-           self.msg_queues.pop(msgid)
+           self.msg_events.pop(msgid)
         except KeyError:
-           LOG.warning('del_callback_queue: callback queue for msgid %s does not exists.', msgid) 
+           LOG.warning('del_callback_event: callback event for msgid %s does not exists.', msgid)
+
+    def msg_exception_to_callbacks(self):
+        for msgid in self.msg_events_stale.keys():
+            evt = self.msg_events_stale.pop(msgid)
+            try:
+               evt.send_exception(ValueError('receiver thread terminated'))
+            except:
+               pass
 
     def msg_reply(self, msg):
         try:
@@ -543,14 +585,14 @@ class KaloomNetconfRecv(worker.BaseWorker):
         if msgid is None:
            LOG.error('message_id could not be parsed on received netconf msg %s', msg)
            return
-        #put the msg on callback q, of the msgid.
+        #put the msg on callback evt, of the msgid.
         try:
-           q = self.msg_queues.pop(msgid)        
+           evt = self.msg_events.pop(msgid) 
         except KeyError:
            #the caller already could timeout 
-           LOG.warning('msg_reply: callback q could not be found for the msgid %s, possibly timeout.', msgid)
+           LOG.warning('msg_reply: callback evt could not be found for the msgid %s, possibly timeout.', msgid)
            return
-        q.put(msg)
+        evt.send(msg)
 
     def _recv_loop(self):
         while self._running:
@@ -561,9 +603,18 @@ class KaloomNetconfRecv(worker.BaseWorker):
                  ##TERMINATOR bytes could fall in different buffer chunks. 
                  ##same buffer chunk could have multiple replies.
                  responses=''
-                 try:
-                   while True:
-                     response = self.chan.recv(2048) #blocking until any data
+                 while len(self.msg_events) > 0:
+                   try:
+                     response = self.chan.recv(2048) #blocking until any data (paramiko has been patched, yields to avoid starvation)
+                     if len(response) == 0: #If a string of length zero is returned, the channel stream has closed.
+                         LOG.warning("channel closed, stopping receiver thread.")
+                         self.msg_events_stale = self.msg_events
+                         self.msg_events = {}
+                         self._running = False
+                         self.chan = None
+                         #no way to check chan status (on caller side), so force to recreate by closing transport
+                         self.client.close()
+                         break
                      responses = responses + response
                      msgs = responses.split(TERMINATOR)
                      msg_count = len(msgs)
@@ -571,21 +622,24 @@ class KaloomNetconfRecv(worker.BaseWorker):
                      for i in range(msg_count - 1):
                          self.msg_reply(msgs[i])
                      responses = msgs[msg_count-1] #last msg
-                 except socket.timeout:
-                     LOG.warning("timeout on netconf socket session, no active session to listen for recv, stopping receiver thread.")
+                     greenthread.sleep(0) #Yield to avoid starvation
+                   except socket.timeout: #timeout on netconf recv
+                     #timeout happened only for one msgid, there could be more msgids waiting for response.
+                     greenthread.sleep(0) #Yield to avoid starvation
+
+                 if self._running:
+                     LOG.debug("no more msg to serve response for, stopping receiver thread.")
                      self._running = False
               else:
-                   LOG.warning("no active session to listen for recv, stopping receiver thread.")
-                   self._running = False
+                 LOG.warning("no active session to listen for recv, stopping receiver thread.")
+                 self.msg_events_stale = self.msg_events
+                 self.msg_events = {}
+                 self._running = False
 
            except Exception as e:
                # If any unexpected exception happens we don't want the
                # receiver_loop to exit.
-               LOG.exception(_LE('Unexpected exception in netconf receiver loop %s', e))
-
-           # Yield to avoid starvation
-           greenthread.sleep(0)
-
+               LOG.error(_LE('Unexpected exception in netconf receiver loop %s', e))
 
 class KaloomNetconf(object):
     def __init__(self, host, port, username, private_key_file, password, timeout_sec = 90):
@@ -595,6 +649,9 @@ class KaloomNetconf(object):
         self.private_key_file = private_key_file
         self.password = password
         self.timeout_sec = timeout_sec
+        self.keepalive_interval_sec = int(timeout_sec * 0.8)
+        self.connect_timeout = 20 ##socket connect timeout
+
 
         self.client = paramiko.SSHClient()
         self.client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -638,7 +695,7 @@ class KaloomNetconf(object):
         responses=''
         try:
             while True:
-              response = self.chan.recv(2048) #blocking until any data
+              response = self.chan.recv(2048) #blocking until any data (paramiko has been patched, yields to avoid starvation)
               responses = responses + response
               index = responses.find(TERMINATOR)
               if index != -1: #found
@@ -664,14 +721,18 @@ class KaloomNetconf(object):
         try:
            private_key = paramiko.RSAKey.from_private_key_file(self.private_key_file)
            self.client.connect(self.host, self.port, self.username,
-                              pkey = private_key, look_for_keys=False, allow_agent=False)
+                              pkey = private_key, look_for_keys=False, allow_agent=False, timeout = self.connect_timeout)
         except Exception as e:
            LOG.debug("Error loading kaloom private key %s: %s, fallback to password", self.private_key_file, e )
-           self.client.connect(self.host, self.port, self.username,
-                            self.password, look_for_keys=False, allow_agent=False)
-        self.client.get_transport().set_keepalive(self.timeout_sec) #session 
+           try:
+              self.client.connect(self.host, self.port, self.username,
+                                  self.password, look_for_keys=False, allow_agent=False, timeout = self.connect_timeout)
+           except Exception as e:
+              raise ValueError("vfabric netconf connect failed msg:%s" %  e)
+        self.client.get_transport().set_keepalive(self.keepalive_interval_sec) #session keepalive 
         self.chan = self.client.get_transport().open_session()
         self.chan.invoke_subsystem('netconf')
+        self.chan.settimeout(self.timeout_sec) #timeout on blocking read/write operations
 
         hello_frm_server = self._read() #throws exception
 
@@ -688,8 +749,6 @@ class KaloomNetconf(object):
 
         #update receiver thread of the chan
         self.receiver.update_chan(self.chan)
-        # start receiver thread
-        self.receiver.start()
 
         return
 
@@ -702,17 +761,24 @@ class KaloomNetconf(object):
         self._init_netconf_session() #throws exception
         msgid = self._get_next_msgid()
         req_xml = req_xml.replace("message_id", str(msgid))
-        #before sending netconf request, notify callback queue to be used by receiver thread.
-        q = queue.LightQueue(1) # looking for single size.
-        self.receiver.add_callback_queue(str(msgid), q)
+        #before sending netconf request, notify callback event to be used by receiver thread.
+        evt = event.Event() # single event
+        self.receiver.add_callback_event(str(msgid), evt)
         #send netconf request
         self.chan.sendall(req_xml + TERMINATOR)
-        #block in queue, until timeout 
+        #block in event, until timeout 
         try: 
-           response_xml = q.get(block=True, timeout=self.timeout_sec)
-        except queue.Empty:
-            LOG.error("timeout on netconf reply recv for session-id %s msgid %s", self.netconf_session_id, msgid)
-            self.receiver.del_callback_queue(str(msgid), q)
+           with Timeout(self.timeout_sec):
+              response_xml = evt.wait()
+        except ValueError as e: #receiver thread on_done sends exception, stop waiting
+            msg = "Error on netconf reply recv for session-id %s msgid %s errmsg:%s" % (self.netconf_session_id, msgid, e)
+            LOG.error(msg)
+            raise ValueError(msg)
+        except Timeout: #Timeout
+            msg = "timeout on netconf reply recv for session-id %s msgid %s" % (self.netconf_session_id, msgid)
+            LOG.error(msg)
+            self.receiver.del_callback_event(str(msgid))
+            raise ValueError(msg)
 
         xml_obj = xml.dom.minidom.parseString(response_xml)
         pretty_xml = xml_obj.toprettyxml()
@@ -759,23 +825,13 @@ class KaloomNetconf(object):
 
         return self._filter_req(get_nw_req)
 
-    def _get_l1_network(self, subtree):
-        get_l1_req = """
-            <networks xmlns="urn:ietf:params:xml:ns:yang:ietf-network">
-              <network>
-              <network-id>1</network-id>
-              %s
-              </network>
-              </networks>
-        """ % (subtree)
-        return self._filter_req(get_l1_req)
-
     def get_l2_network_by_name(self, nw_name):
         nw_name_subtree = """
-        <node xmlns:a="urn:ietf:params:xml:ns:netconf:base:1.0">
-            <l2-node-attributes xmlns="urn:ietf:params:xml:ns:yang:ietf-l2-topology">
-                <name>%s</name>
-            </l2-node-attributes>
+        <node>
+        <node-id>%s</node-id>
+        <l2-node-attributes xmlns="urn:ietf:params:xml:ns:yang:ietf-l2-topology">
+           <KNID xmlns="urn:kaloom:faas:vfabric-l2-topology"/>
+        </l2-node-attributes>
         </node>
         """ % (nw_name)
 
@@ -786,39 +842,32 @@ class KaloomNetconf(object):
         LOG.debug(resp)
 
         nw_xml_root = objectify.fromstring(resp).getroottree()
-        networks = nw_xml_root.findall('//' + TAG_L2_NODE_ATTR)
-        for nw in networks:
-            name = nw.find(TAG_NW_ATTR_NAME)
-            kaloom_knid = nw.find(TAG_NW_ATTR_KNID)
-
-            if name == nw_name:
-                return {'name': nw_name, 'kaloom_knid': int(kaloom_knid)}
+        nw = nw_xml_root.find('//' + TAG_L2_NODE_ATTR)
+        if nw is not None:
+           kaloom_knid = nw.find(TAG_NW_ATTR_KNID)
+           return {'kaloom_knid': int(kaloom_knid)}
         return None
 
-    def get_l2_network_by_knid(self, nw_knid):
-        nw_knid_subtree = """
-        <node xmlns:a="urn:ietf:params:xml:ns:netconf:base:1.0">
-            <l2-node-attributes xmlns="urn:ietf:params:xml:ns:yang:ietf-l2-topology">
-                <KNID xmlns="urn:kaloom:faas:vfabric-l2-topology">%d</KNID>
-            </l2-node-attributes>
+    def get_l2_network_names(self, prefix):
+        nw_name_subtree = """
+        <node>
+        <node-id/>
         </node>
-        """ % (nw_knid)
-
-        req = self._get_l2_network(nw_knid_subtree)
+        """
+        req = self._get_l2_network(nw_name_subtree)
         LOG.debug(req)
 
         resp = self._exec_netconf_cmd(req)
         LOG.debug(resp)
 
         nw_xml_root = objectify.fromstring(resp).getroottree()
-        networks = nw_xml_root.findall('//' + TAG_L2_NODE_ATTR)
+        networks = nw_xml_root.findall('//' + TAG_NODE_ID)
+        nw_names=[]
         for nw in networks:
-            name = nw.find(TAG_NW_ATTR_NAME)
-            kaloom_knid = nw.find(TAG_NW_ATTR_KNID)
-
-            if kaloom_knid == nw_knid:
-                return {'name': name, 'kaloom_knid': kaloom_knid}
-        return None
+            name = nw.text
+            if name.startswith(prefix):
+               nw_names.append(name)
+        return nw_names
 
     def get_tp_by_annotation(self, host):
         _KEY = "OpenStack_OVS_Host"
@@ -860,7 +909,7 @@ class KaloomNetconf(object):
                     return {'name': host, 'id': tpid}
         return None
 
-    def create_l2_network(self, nw_name, default_vlanid):
+    def create_l2_network(self, nw_name, gui_nw_name, default_vlanid):
         l2_create_req = """<networks xmlns="urn:ietf:params:xml:ns:yang:ietf-network">
               <network>
                 <network-id>2</network-id>
@@ -874,10 +923,10 @@ class KaloomNetconf(object):
                     <mac-address-table-aging-enable>false</mac-address-table-aging-enable>
                   </vl2-mac>
                   <l2-node-attributes xmlns="urn:ietf:params:xml:ns:yang:ietf-l2-topology">
-                    <name>%(name)s</name>
-                    <description>%(name)s</description>
+                    <name>%(gui_name)s</name>
+                    <description>%(gui_name)s</description>
                   </l2-node-attributes>
-                </node></network></networks>""" % {'name': nw_name}
+                </node></network></networks>""" % {'name': nw_name,'gui_name': gui_nw_name}
 
         req = self._edit_config_req(l2_create_req)
         resp = self._exec_netconf_cmd(req)
@@ -886,6 +935,24 @@ class KaloomNetconf(object):
         self._validate_response(resp)
 
         return self.get_l2_network_by_name(nw_name)
+
+    def rename_l2_network(self, nw_name, gui_nw_name):
+        l2_rename_req = """<networks xmlns="urn:ietf:params:xml:ns:yang:ietf-network">
+              <network>
+                <network-id>2</network-id>
+                <node>
+                  <node-id>%(nw_name)s</node-id>
+                  <l2-node-attributes xmlns="urn:ietf:params:xml:ns:yang:ietf-l2-topology" xmlns:a="urn:ietf:params:xml:ns:netconf:base:1.0" a:operation="merge">
+                    <name>%(gui_nw_name)s</name>
+                    <description>%(gui_nw_name)s</description>
+                  </l2-node-attributes>
+                </node></network></networks>""" % {'nw_name':nw_name, 'gui_nw_name': gui_nw_name}
+
+        req = self._edit_config_req(l2_rename_req)
+        resp = self._exec_netconf_cmd(req)
+
+        LOG.debug(resp)
+        self._validate_response(resp)
 
     def delete_l2_network(self, nw_name):
         l2_delete_req = """
@@ -976,67 +1043,51 @@ class KaloomNetconf(object):
         return routers
 
     def get_router_id_by_name(self, router_name):
-        routers = self.list_router_name_id()
-        for (name,node_id) in routers:
-            if name == router_name:
-                return node_id
-        return None
-
-    def list_routers_info(self):
-        #[{'name': '__OpenStack__825434de-5db2-48a0-9502-d5d24ac04fb0-router1', 'node_id': '9d1b99dd-3fb8-4dfb-ab1f-2c934a84f4c7', 'interfaces': [{'interface': 'netf02b31b30cb1', 'supporting_node_id': '5b2f5348-cb01-46ad-9dc7-e08328e2a910', 'supporting_node_layer': '2', 'ip_addresses': ['2001:db8:1234::1']}]}]
-        req = L3_command_dict["LIST_ROUTER"]
+        req = L3_command_dict["GET_ROUTER_ID"] % {'name':router_name}
         resp = self._exec_netconf_cmd(req)
 
         LOG.debug(resp)
         xml_root = objectify.fromstring(resp).getroottree()
-        nodes = xml_root.findall('//' + TAG_NODE)
-        routers=[]
-        for node in nodes:
-            l3_name = node.find(TAG_L3_ATTR).find(TAG_L3_NAME).text
-            l3_node_id = node.find(TAG_NODE_ID).text
-            l3_info={'name': l3_name, 'node_id': l3_node_id, 'interfaces': []}
-
-            l3_interfaces={}
-            nt_tps = node.findall(TAG_NT_TP)
-            for nt_tp in nt_tps:
-                l3_interface = nt_tp.find(TAG_L3T_L3_TP_ATTR).find(TAG_VL3T_IFNAME).text
-                supporting_tp = nt_tp.find(TAG_NT_SUPPORTING_TP)
-                supporting_node_id = supporting_tp.find(TAG_NT_NODE_REF).text
-                supporting_node_layer = supporting_tp.find(TAG_NT_NETWORK_REF).text
-                l3_interfaces[l3_interface]={'interface': l3_interface, 'supporting_node_id': supporting_node_id, 'supporting_node_layer': supporting_node_layer}
-
-            interfaces = node.find(TAG_VIF_INTERFACES).findall(TAG_VIF_INTERFACE)
-            for interface in interfaces:
-                  l3_interface = interface.find(TAG_VIF_NAME).text
-                  interface_ipv4_addresses = interface.find(TAG_VIP_IPV4).findall(TAG_VIP_ADDRESS)
-                  interface_ipv6_addresses = interface.find(TAG_VIP_IPV6).findall(TAG_VIP_ADDRESS)
-
-                  ip_addresses=[]
-                  for address in interface_ipv4_addresses + interface_ipv6_addresses:
-                        ip = address.find(TAG_VIP_IP).text
-                        ip_addresses.append(ip)
-                  l3_interfaces[l3_interface]['ip_addresses']=ip_addresses
-                  l3_info['interfaces'].append(l3_interfaces[l3_interface])
-
-            routers.append(l3_info)
-        return routers
+        id = xml_root.find('//' + TAG_NODE_ID)
+        if id is None:
+            return None
+        return id.text
 
     def get_router_interface_info(self, router_name, l2_node_id):
-        routers = self.list_routers_info()
+        req = L3_command_dict["GET_ROUTER_INTERFACE_INFO"] % {'router_name': router_name}
+        resp = self._exec_netconf_cmd(req)
+        LOG.debug(resp)
         router_inf_info={'node_id': None, 'interface': None, 'ip_addresses': []}
-        for router in routers:
-            if router['name'] == router_name:
-                router_inf_info['node_id'] = router['node_id']
-                for interface in router['interfaces']:
-                    if interface['supporting_node_layer'] == '2' and interface['supporting_node_id'] == l2_node_id:
-                       router_inf_info['interface'] = interface['interface']
-                       router_inf_info['ip_addresses'] = interface['ip_addresses']
-                       return router_inf_info
-                return router_inf_info
+
+        xml_root = objectify.fromstring(resp).getroottree()
+        node = xml_root.find('//' + TAG_NODE)
+        if node is None:
+           return router_inf_info
+        router_inf_info['node_id'] = node.find(TAG_NODE_ID).text
+        nt_tps = node.findall(TAG_NT_TP)
+        #find router_interface connecting to l2_node, if any
+        for nt_tp in nt_tps:
+           supporting_tp = nt_tp.find(TAG_NT_SUPPORTING_TP)
+           supporting_node_layer = supporting_tp.find(TAG_NT_NETWORK_REF).text
+           supporting_node_id = supporting_tp.find(TAG_NT_NODE_REF).text
+           if supporting_node_layer == '2' and supporting_node_id == l2_node_id:
+              router_inf_info['interface'] = nt_tp.find(TAG_L3T_L3_TP_ATTR).find(TAG_VL3T_IFNAME).text
+              break
+        #now find IPs for the router_interface
+        if router_inf_info['interface']:  
+           interfaces = node.find(TAG_VIF_INTERFACES).findall(TAG_VIF_INTERFACE)
+           for interface in interfaces:
+              if router_inf_info['interface'] == interface.find(TAG_VIF_NAME).text:
+                interface_ipv4_addresses = interface.find(TAG_VIP_IPV4).findall(TAG_VIP_ADDRESS)
+                interface_ipv6_addresses = interface.find(TAG_VIP_IPV6).findall(TAG_VIP_ADDRESS)
+                for address in interface_ipv4_addresses + interface_ipv6_addresses:
+                  ip = address.find(TAG_VIP_IP).text
+                  router_inf_info['ip_addresses'].append(ip)
+                break
         return router_inf_info
 
     def create_router(self, router_name):
-        req = L3_command_dict["CREATE_ROUTER"].replace("router_name",router_name)
+        req = L3_command_dict["CREATE_ROUTER"] % {'router_name':router_name}
         resp = self._exec_netconf_cmd(req)
 
         LOG.debug(resp)
@@ -1047,23 +1098,21 @@ class KaloomNetconf(object):
             raise ValueError(resp_xml['rpc-error']['error-message'])
 
     def rename_router(self, router_info):
-        req = L3_command_dict["RENAME_ROUTER"].replace("router_node_id",router_info['router_node_id'])
-        req = req.replace("router_name",router_info['router_name'])
+        req = L3_command_dict["RENAME_ROUTER"] % {'router_node_id':router_info['router_node_id'], 'router_name':router_info['router_name']}
         resp = self._exec_netconf_cmd(req)
 
         LOG.debug(resp)
         self._validate_response(resp)   ##raise ValueError
 
     def delete_router(self, router_node_id):
-        req = L3_command_dict["DELETE_ROUTER"].replace("router_node_id",router_node_id)
+        req = L3_command_dict["DELETE_ROUTER"] % {'router_node_id':router_node_id}
         resp = self._exec_netconf_cmd(req)
 
         LOG.debug(resp)
         self._validate_response(resp)   ##raise ValueError
 
     def attach_router(self, router_node_id, l2_node_id):
-        req = L3_command_dict["ATTACH_ROUTER"].replace("router_node_id",router_node_id)
-        req = req.replace("l2_node_id",l2_node_id)
+        req = L3_command_dict["ATTACH_ROUTER"] % {'router_node_id':router_node_id, 'l2_node_id':l2_node_id}
         resp = self._exec_netconf_cmd(req)
 
         LOG.debug(resp)
@@ -1076,8 +1125,7 @@ class KaloomNetconf(object):
             return tp_interface.text
 
     def detach_router(self, router_node_id, l2_node_id):
-        req = L3_command_dict["DETACH_ROUTER"].replace("router_node_id",router_node_id)
-        req = req.replace("l2_node_id",l2_node_id)
+        req = L3_command_dict["DETACH_ROUTER"] % {'router_node_id':router_node_id, 'l2_node_id':l2_node_id}
         resp = self._exec_netconf_cmd(req)
 
         LOG.debug(resp)
@@ -1088,10 +1136,7 @@ class KaloomNetconf(object):
             req = L3_command_dict["addIPv4AddressToInterface"]
         else:
             req = L3_command_dict["addIPv6AddressToInterface"]
-        req = req.replace("router_node_id",router_info['router_node_id'])
-        req = req.replace("interface_name",router_info['interface_name'])
-        req = req.replace("ip_address",router_info['ip_address'])
-        req = req.replace("prefix_length",router_info['prefix_length'])
+        req = req % {'router_node_id':router_info['router_node_id'], 'interface_name':router_info['interface_name'], 'ip_address':router_info['ip_address'], 'prefix_length':router_info['prefix_length']}
         resp = self._exec_netconf_cmd(req)
 
         LOG.debug(resp)
@@ -1102,9 +1147,7 @@ class KaloomNetconf(object):
             req = L3_command_dict["deleteIPv4AddressFromInterface"]
         else:
             req = L3_command_dict["deleteIPv6AddressFromInterface"]
-        req = req.replace("router_node_id",router_info['router_node_id'])
-        req = req.replace("interface_name",router_info['interface_name'])
-        req = req.replace("ip_address",router_info['ip_address'])
+        req = req % {'router_node_id':router_info['router_node_id'], 'interface_name':router_info['interface_name'], 'ip_address':router_info['ip_address']}
         resp = self._exec_netconf_cmd(req)
 
         LOG.debug(resp)
@@ -1115,9 +1158,7 @@ class KaloomNetconf(object):
             req = L3_command_dict["addIPv4StaticRoute"]
         else:
             req = L3_command_dict["addIPv6StaticRoute"]
-        req = req.replace("router_node_id",route_info['router_node_id'])
-        req = req.replace("destination_prefix",route_info['destination_prefix'])
-        req = req.replace("next_hop_address",route_info['next_hop_address'])
+        req = req % {'router_node_id': route_info['router_node_id'], 'destination_prefix':route_info['destination_prefix'], 'next_hop_address':route_info['next_hop_address']}
         resp = self._exec_netconf_cmd(req)
 
         LOG.debug(resp)
@@ -1128,48 +1169,20 @@ class KaloomNetconf(object):
             req = L3_command_dict["deleteIPv4StaticRoute"]
         else:
             req = L3_command_dict["deleteIPv6StaticRoute"]
-        req = req.replace("router_node_id",route_info['router_node_id'])
-        req = req.replace("destination_prefix",route_info['destination_prefix'])
+        req = req % {'router_node_id':route_info['router_node_id'], 'destination_prefix':route_info['destination_prefix']}
         resp = self._exec_netconf_cmd(req)
 
         LOG.debug(resp)
         self._validate_response(resp)   ##raise ValueError
 
 if __name__ == "__main__":
-    host = "10.201.12.21"
+    from eventlet import monkey_patch
+    monkey_patch()
+    host = "xx.xx.xx.xx"
     port = 830
     username = "admin"
-    private_key_file = "/etc/neutron/plugins/ml2/.ssh/kaloom_netconf"
+    private_key_file = ""
     password = "kaloom355"
 
     kn = KaloomNetconf(host, port, username, private_key_file, password)
-    # print(kn._exec_netconf_cmd(REQ_GET))
-    # sleep(5)
-    # print '#'* 30
-    # nw_with_name = kn.get_l2_network_by_name("nw1")
-    # pprint(nw_with_name)
-
-    # nw_with_knid = kn.get_l2_network_by_knid(1234)
-    # pprint(nw_with_knid)
-
-    # nw_with_knid = kn.get_l2_network_by_knid(1407381775971979)
-    # pprint(nw_with_knid)
-
-    # kn.get_tp_by_annotation("3")
-    tpid = "5cf653e3-6746-44e2-971c-5fac092ccf2a"
-    my_nw_name = "netconf-nw1"
-    vlan = 111
-
-    nw = kn.create_l2_network(my_nw_name, vlan)
-    print "### NETWORK CREATED %s ###" % nw
-    sleep(10)
-    kn.attach_tp_to_l2_network(my_nw_name, "tp_attach1", tpid,vlan)
-    print "### TP ATTACHED ###"
-    sleep(10)
-    kn.detach_tp_from_l2_network(my_nw_name, tpid)
-    print "### TP DETACHED ###"
-    sleep(10)
-    kn.delete_l2_network("netconf-nw1")
-    print "### NETWORK DELETED ###"
-
-
+    print kn.get_l2_network_names("__OpenStack__")

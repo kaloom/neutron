@@ -168,22 +168,22 @@ class KVSTrunkSkeleton(agent.TrunkSkeleton):
                         vlan = subport.segmentation_id
                         knid = result[subport.port_id]['knid']
                         if knid is not None:
+                           # add anti-spoofing rules
+                           pairs = result[subport.port_id]['pairs']
+                           mac = None
+                           if len(pairs) > 0:
+                              mac = pairs[0]['mac']
+                              #we need extra dhcp discover/solicit rules
+                              pairs.extend(self._dhcp_discover_rule_pairs(pairs, mac))
+                              for pair in pairs:
+                                 _ip = pair['ip']
+                                 _mac = pair['mac']
+                                 kvs_net.add_anti_spoofing_rule(kvs_port_id, _mac, _ip, vlan = vlan )
                            ## attach interface to network, with access vlan
                            kvs_net._attach_interface(parent_port_info['kvs_device_name'], kvs_port_id, knid, vlan)
-                           pairs = result[subport.port_id]['pairs'] 
-                           if len(pairs) > 0:
-                              ## add static-mac rule
-                              mac = pairs[0]['mac']
+                           ## add static-mac rule
+                           if mac is not None:
                               kvs_net.add_mac_entry(knid, mac, kvs_port_id, vlan)
-
-                              # add anti-spoofing rules
-                              #in case subport mac differs from parent-port mac, we need extra dhcp discover/solicit rules
-                              if mac != parent_port_info['mac']:  
-                                  pairs.extend(self._dhcp_discover_rule_pairs(pairs, mac))
-                              for pair in pairs:
-                                 ip = pair['ip']
-                                 mac = pair['mac']
-                                 kvs_net.add_anti_spoofing_rule(kvs_port_id, mac, ip)
                         else:
                            LOG.error("KNID not found for trunk's subport %s", subport.port_id)
                     #update status of trunk
@@ -202,13 +202,12 @@ class KVSTrunkSkeleton(agent.TrunkSkeleton):
                               mac = pairs[0]['mac']
                               kvs_net.delete_mac_entry(knid, mac)
                               # delete anti-spoofing rules
-                              #in case subport mac differs from parent-port mac, we need to delete extra dhcp discover/solicit rules
-                              if mac != parent_port_info['mac']:  
-                                  pairs.extend(self._dhcp_discover_rule_pairs(pairs, mac))
+                              #we need to delete extra dhcp discover/solicit rules
+                              pairs.extend(self._dhcp_discover_rule_pairs(pairs, mac))
                               for pair in pairs:
                                  ip = pair['ip']
                                  mac = pair['mac']
-                                 kvs_net.delete_anti_spoofing_rule(kvs_port_id, mac, ip)
+                                 kvs_net.delete_anti_spoofing_rule(kvs_port_id, mac, ip, vlan = vlan)
 
             except oslo_messaging.MessagingException as e:
                 LOG.error(

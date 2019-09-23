@@ -57,7 +57,7 @@ class kvsPluginApi(agent_rpc.PluginApi):
 
 def get_tap_device_name(interface_id):
     """Convert port ID into device name format expected by KVS"""
-    if not interface_id:
+    if interface_id is None:
         LOG.warning("Invalid Interface ID, will lead to incorrect "
                     "tap device name")
     tap_device_name = (n_const.TAP_DEVICE_PREFIX +

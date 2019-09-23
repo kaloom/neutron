@@ -12,7 +12,7 @@
 #    under the License.
 
 import sqlalchemy as sa
-
+from datetime import datetime
 from neutron_lib.db import model_base
 from oslo_log import log
 
@@ -25,14 +25,16 @@ class KaloomKnidMapping(model_base.BASEV2):
     kaloom_knid = sa.Column('kaloom_knid', sa.BigInteger(), primary_key=True)
     network_id = sa.Column('network_id', sa.String(length=255),
                            sa.ForeignKey('networks.id'), nullable=False)
-    network_name = sa.Column('network_name', sa.String(length=255), nullable=False)
-    stale = sa.Column('stale', sa.Boolean(), default=False, nullable=False)
-
     def __repr__(self):
         return "<KNID Mapping KIND:%s Network ID:%s>" % (self.kaloom_knid, self.network_id)
 
 
 class KaloomVlanHostMapping(model_base.BASEV2):
+    #CREATING: create_port_precommit tags 'CREATING' on first port 
+    #CREATING -> CREATED: successful bind_port tags 'CREATED'.
+    #CREATING -> DELETING: unsucessful bind_port calls delete_port that tags 'DELETING'
+    #CREATING/CREATED -> DELETING: delete_port_precommit's tag for last port
+    #DELETING->DELETED: delete_port_postcommit's tag, finished deletion (implicit: with row deletion) 
     __tablename__ = "kaloom_ml2_vlan_host_mapping"
 
     vlan_id = sa.Column('vlan_id', sa.Integer(), nullable=False)
@@ -43,7 +45,8 @@ class KaloomVlanHostMapping(model_base.BASEV2):
                      primary_key=True, nullable=False)
     segment_id = sa.Column('segment_id', sa.String(length=255), nullable=False)
     network_name = sa.Column('network_name', sa.String(length=255), nullable=False)
-    stale = sa.Column('stale', sa.Boolean(), default=False, nullable=False)
+    state = sa.Column('state', sa.Enum('CREATING', 'CREATED', 'DELETING'), default='CREATING', nullable=False)
+    timestamp = sa.Column('timestamp', sa.DateTime(), default=datetime.utcnow, nullable=False)
     sa.PrimaryKeyConstraint('network_id', 'host')
 
     def __repr__(self):
@@ -76,3 +79,13 @@ class KaloomTPOperation(model_base.BASEV2):
 
     def __repr__(self):
         return "<TP Operation host:network=(%s:%s)>" % (self.host, self.network_id)
+
+class KaloomConcurrency(model_base.BASEV2):
+    __tablename__ = "kaloom_x_s_lock"
+
+    name = sa.Column('name', sa.String(length=255),
+                           primary_key=True, nullable=False)
+    sa.PrimaryKeyConstraint('name')
+
+    def __repr__(self):
+        return "<name=(%s)>" % (self.name)

@@ -1,0 +1,86 @@
+# In case of releasing a version of neutron driver and doc,
+# you need to comment out the SNAPSHOT variable below by adding #
+# in the beginning of the line, otherwise the build is considered
+# a snapshot and will append Job ID to the artifact filename with
+# post to be compliant with PBR versioning used in Openstack.
+#
+# The following variables should be set in Gitlab project
+# settings for CICD:
+# - ARTIFACTORY_URL                : Artifactory URL
+# - ARTIFACTORY_USER               : Artifactory username
+# - ARTIFACTORY_PASS               : Artifactory password
+# - ARTIFACTORY_REPO_PATH_SNAPSHOT : Path to snapshots repo
+# - ARTIFACTORY_REPO_PATH_RELEASE  : Path to releases repo
+# - DOCKERHUB_SNAPSHOT             : URL for snapshots Docker registry
+# - DOCKERHUB_RELEASE              : URL for releases Docker registry 
+#
+# The artifacts are uploaded to either snapshots or release repo
+# in artifactory depending on the SNAPSHOT variable existence
+
+variables:
+  VERSION: 0.1.0
+
+stages:
+- build_doc
+- build
+- build_kvs_agent  
+- test
+
+Build Installation Doc:
+  image: dockerhub.artifactory.kaloom.io/blang/latex:ubuntu
+  stage: build_doc
+  script:
+    - apt-get update && apt-get install -y git wget
+    - wget -c https://github.com/jgm/pandoc/releases/download/2.3.1/pandoc-2.3.1-linux.tar.gz
+    - git clone https://github.com/Wandmalfarbe/pandoc-latex-template.git
+    - tar -vxf pandoc-2.3.1-linux.tar.gz
+    - mv pandoc-2.3.1/bin/* /usr/bin
+    - mkdir -p ~/.pandoc/templates
+    - cp pandoc-latex-template/eisvogel.tex ~/.pandoc/templates/eisvogel.latex
+    - pandoc README.md -o README.pdf --template eisvogel -V titlepage --highlight-style zenburn -V logo=kaloom_logo.jpg
+  artifacts:
+    untracked: true
+    expire_in: 3 days
+
+Build Neutron Driver:
+  image: docker.artifactory.kaloom.io/opensource/build-neutron
+  stage: build
+  dependencies:
+    - Build Installation Doc
+  script:
+   - "[ -z ${SNAPSHOT} ] && export BUILD_VERSION=${VERSION} || export BUILD_VERSION=${VERSION}${SNAPSHOT}"
+   - sh build.sh -a -v ${BUILD_VERSION}
+   - "[ ! -z ${SNAPSHOT} ] && export ARTIFACTORY_REPO=${ARTIFACTORY_REPO_PATH_SNAPSHOT}/ 
+|| export ARTIFACTORY_REPO=${ARTIFACTORY_REPO_PATH_RELEASE}/"
+   - echo "Uploading artifacts to ${ARTIFACTORY_URL} in the path ${ARTIFACTORY_REPO}"
+   - sh publish-rpms.sh /builds/opensource/neutron/build/dist ${ARTIFACTORY_REPO} networking_kaloom
+   - nosetests networking_kaloom/tests/
+  artifacts:
+    untracked: true
+    expire_in: 3 days
+
+Build KVS Agent:
+  image: docker.artifactory.kaloom.io/opensource/build-neutron
+  stage: build_kvs_agent
+  script:
+   - "[ -z ${SNAPSHOT} ] && export BUILD_VERSION=${VERSION} || export BUILD_VERSION=${VERSION}${SNAPSHOT}"
+   - sh kaloom_kvs_agent-build.sh -r -v ${BUILD_VERSION}
+   - "[ ! -z ${SNAPSHOT} ] && export ARTIFACTORY_REPO=${ARTIFACTORY_REPO_PATH_SNAPSHOT}/ 
+|| export ARTIFACTORY_REPO=${ARTIFACTORY_REPO_PATH_RELEASE}/"
+   - echo "Uploading artifacts to ${ARTIFACTORY_URL} in the path ${ARTIFACTORY_REPO}"
+   - sh publish-rpms.sh /builds/opensource/neutron/kaloom_kvs_agent-build/dist ${ARTIFACTORY_REPO} kaloom_kvs_agent
+  artifacts:
+    untracked: true
+    expire_in: 3 days
+
+
+Build Openstack Containers:
+  stage: test
+  tags:
+    - RHEL
+  script:
+    - "[ ! -z ${SNAPSHOT} ] && export ARTIFACTORY_REPO=${ARTIFACTORY_REPO_PATH_SNAPSHOT}/ 
+|| export ARTIFACTORY_REPO=${ARTIFACTORY_REPO_PATH_RELEASE}/"
+    - "[ ! -z ${SNAPSHOT} ] && export DOCKER_REPO=${DOCKERHUB_SNAPSHOT}/ 
+|| export DOCKER_REPO=${DOCKERHUB_RELEASE}/"
+    - sh publish-containers.sh ${ARTIFACTORY_REPO} ${DOCKER_REPO}

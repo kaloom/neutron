@@ -1,0 +1,9 @@
+.gradle/
+build/
+.project
+.settings/
+.vscode/
+*.pyc
+.gogradle/
+.inner-gradle/
+

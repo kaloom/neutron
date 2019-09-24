@@ -18,6 +18,7 @@ from oslo_db import exception as db_exc
 from eventlet import greenthread
 from oslo_log import log
 from xml.sax.saxutils import escape
+import netaddr
 
 LOG = log.getLogger(__name__)
 
@@ -91,3 +92,10 @@ def tp_operation_unlock(host, network_id):
     kaloom_db.delete_tp_operation(host, network_id)
     LOG.debug('tp_operation_unlock for host=%s, network_id=%s', host, network_id)
 
+def get_overlapped_subnet(given_ip_cidr, existing_ip_cidrs):
+    given_net = netaddr.IPNetwork(given_ip_cidr)
+    for ip_cidr in existing_ip_cidrs:
+        existing_net = netaddr.IPNetwork(ip_cidr)
+        if given_net in existing_net or existing_net in given_net:
+            return ip_cidr
+    return None

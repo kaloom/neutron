@@ -99,3 +99,46 @@ def get_overlapped_subnet(given_ip_cidr, existing_ip_cidrs):
         if given_net in existing_net or existing_net in given_net:
             return ip_cidr
     return None
+
+#command pattern for reversible operations
+# receiver
+class vfabric_operation_reversible:
+    def __init__(self, vfabric, do_operation, undo_operation):
+        self.vfabric = vfabric
+        self.do_operation = do_operation
+        self.undo_operation = undo_operation
+
+    def execute(self, *args, **kwargs):
+        method = getattr(self.vfabric, self.do_operation)
+        return method(*args, **kwargs)
+
+    def undo(self, *args, **kwargs):
+        method = getattr(self.vfabric, self.undo_operation)
+        return method(*args, **kwargs)
+
+# command
+class Command:
+    def __init__(self, receiver, *args, **kwargs):
+        self.receiver = receiver
+        self.args = args
+        self.kwargs = kwargs
+    def execute(self):
+        return self.receiver.execute(*self.args, **self.kwargs)
+    def undo(self):
+        return self.receiver.undo(*self.args, **self.kwargs)
+
+# invoker
+class Invoker:
+    def __init__(self):
+        self.history = []
+    def execute(self, command):
+        resp = command.execute()
+        self.history.append(command)
+        return resp
+    def undo(self):
+        while len(self.history) > 0:
+           command = self.history.pop()
+           try:
+              command.undo()
+           except:
+              pass

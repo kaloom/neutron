@@ -94,11 +94,12 @@ def tp_operation_unlock(host, network_id):
 
 def get_overlapped_subnet(given_ip_cidr, existing_ip_cidrs):
     given_net = netaddr.IPNetwork(given_ip_cidr)
+    overlapped_ip_cidrs=[]
     for ip_cidr in existing_ip_cidrs:
         existing_net = netaddr.IPNetwork(ip_cidr)
         if given_net in existing_net or existing_net in given_net:
-            return ip_cidr
-    return None
+            overlapped_ip_cidrs.append(ip_cidr)
+    return overlapped_ip_cidrs
 
 #command pattern for reversible operations
 # receiver

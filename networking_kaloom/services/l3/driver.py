@@ -156,7 +156,8 @@ class KaloomL3Driver(object):
                 raise kaloom_exc.KaloomServicePluginRpcError(msg=msg)
 
     def _delete_stale_ipaddress_from_interface(self, interface_info, given_ip_cidr, existing_ip_cidrs):
-        overlapped_subnet_ip_cidr = utils.get_overlapped_subnet(given_ip_cidr, existing_ip_cidrs )
+        overlapped_subnet_ip_cidrs = utils.get_overlapped_subnet(given_ip_cidr, existing_ip_cidrs )
+        overlapped_subnet_ip_cidr = overlapped_subnet_ip_cidrs[0] if len(overlapped_subnet_ip_cidrs) > 0 else None
         if overlapped_subnet_ip_cidr is not None:
             if given_ip_cidr == overlapped_subnet_ip_cidr:
                 #already exists exact ip/subnet in vfabric, don't delete, reuse

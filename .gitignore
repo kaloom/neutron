@@ -6,4 +6,4 @@ build/
 *.pyc
 .gogradle/
 .inner-gradle/
-
+docker/openstack-neutron-server-kaloom/*.rpm

@@ -1,4 +1,3 @@
-#!/bin/bash
 # Copyright 2019 Kaloom, Inc.  All rights reserved.
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
 #    not use this file except in compliance with the License. You may obtain
@@ -12,7 +11,6 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-# wrapper script to build neutron plugin in build container
-
-docker run --rm -u $(id -u ${USER}):$(id -g ${USER}) -v `pwd`:/opt/neutron -w /opt/neutron/docs kaloom/docs-neutron:1.0.0 make clean html htmlhelp latexpdf man linkcheck
-docker run --rm -u $(id -u ${USER}):$(id -g ${USER}) -v `pwd`:/opt/neutron kaloom/build-neutron:1.0.0
+# Allow composition of nova.virt namespace from disparate packages.
+# Required to play nicely with namespace composition (PEP420).
+__import__('pkg_resources').declare_namespace(__name__)

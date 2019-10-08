@@ -23,7 +23,7 @@ NEUTRON_KALOOM_RELEASE=$(echo ${RPM_VERSION} | cut -d. -f3)
 cp build/networking_kaloom/dist/networking_kaloom-*.noarch.rpm docker/openstack-neutron-server-kaloom/
 echo "RPM version $RPM_VERSION to be installed on rhos container"
 
-if [[ "$#" -eq 0 ]]; then
+if [ "$#" -eq 0 ]; then
     echo "Building local container rhosp13/openstack-neutron-server-kaloom-plugin:${NEUTRON_KALOOM_VERSION}.${NEUTRON_KALOOM_RELEASE}"
     docker build --no-cache=true docker/openstack-neutron-server-kaloom/ \
         --build-arg BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ') \

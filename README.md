@@ -12,35 +12,28 @@
     License for the specific language governing permissions and limitations
     under the License.
  --->
----
-title: "Kaloom vFabric ML2 Plugin for OpenStack"
-author: [© Kaloom Inc]
-date: "2018-10-03"
-keywords: [ML2, Neutron]
-...
-
 
 # Kaloom Neutron ML2 Plugin
 
-# Building and Development
+### Building and Development
 
 Clone the repo
 
 ```bash
-$ git clone https://gitlab.kaloom.io/opensource/neutron.git
+$ git clone https://github.com/kaloom/neutron.git
 $ ./docker-build.sh
 ```
 To install Kaloom ML2, run
 
 ```bash
 $ cd neutron
-$ cp setup.cfg.doc setup.cfg
+$ cp networking_kaloom-setup.cfg setup.cfg
 $ sudo python setup.py install
 ```
 
 To install KVS L2 agent
 
-Download the src RPM from *https://artifactory.kaloom.io/artifactory/rpms/kaloom/opensource/neutron/kaloom_kvs_agent-<version>.src.rpm* and copy them
+Download the src RPM *kaloom_kvs_agent-<version>.src.rpm* and copy them
 to the correct location.
 
 ```bash
@@ -67,7 +60,7 @@ $ sudo neutron-kaloom-agent \
 In order to test or troubleshoot one needs to launch the development container in persistent mode:
 
 ```bash
-$ docker run --rm  -it -v `pwd`:/opt/neutron docker.artifactory.kaloom.io/opensource/build-neutron:0.0.2 bash
+$ docker run --rm  -it -v `pwd`:/opt/neutron kaloom/build-neutron:1.0.0 bash
 ```
 
 Run the tests by executing the following command
@@ -99,8 +92,6 @@ that is connected to the given host's br-provider upstream port.
 Get the latest `networking_kaloom` RPM package from the releases page and install it on
 the controller node.
 ```bash
-$ curl https://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm >/tmp/epel-release-latest-7.noarch.rpm
-$ rpm -ivh /tmp/epel-release-latest-7.noarch.rpm 
 $ sudo yum localinstall -y networking_kaloom.rpm
 ```
 
@@ -111,7 +102,6 @@ KVS node
 $ sudo yum install python-pip
 $ sudo pip install grpcio grpcio-tools
 $ sudo yum localinstall -y  kaloom_kvs_agent.rpm
-$ sudo systemctl daemon-reload 
 ```
 
 Proceed to the configuration section after the installation and follow the steps
@@ -127,14 +117,14 @@ $ ssh-keygen -t rsa -f /etc/neutron/plugins/ml2/.ssh/kaloom_netconf
 $ chown root:neutron /etc/neutron/plugins/ml2/.ssh/kaloom_netconf
 $ chmod 440 /etc/neutron/plugins/ml2/.ssh/kaloom_netconf
 ```
-1. push public-key kaloom_netconf.pub contents to vfabric: via GUI or netconf api 
+2. push public-key kaloom_netconf.pub contents to vfabric: via GUI or netconf api 
 
-1. Stop neutron server
+3. Stop neutron server
 ```bash
 $ sudo systemctl stop neutron-server
 ```
 
-1. Edit `/etc/neutron/plugins/ml2/ml2_conf.ini` and add the following
+4. Edit `/etc/neutron/plugins/ml2/ml2_conf.ini` and add the following
    section at the end. Make sure you have the correct values
    for each variable.
 ```ini
@@ -156,15 +146,12 @@ $ sudo systemctl stop neutron-server
    # If not set, a value of 180 seconds is assumed. (integer value)
    # If set to 0, the plugin will never sync after first sync.
    l3_sync_interval = 600
-   # Toggle to enable cleanup of routers by the sync worker.
-   #If not set, a value of "False" is assumed. (boolean value)
-   enable_cleanup = false
 ```
 
-1. In `/etc/neutron/plugins/ml2/ml2_conf.ini` update/add the following
+5. In `/etc/neutron/plugins/ml2/ml2_conf.ini` update/add the following
    variables
 ```ini
-   mechanism_drivers=kaloom,openvswitch
+   mechanism_drivers=kaloom_kvs,kaloom_ovs,openvswitch
    type_drivers=kaloom_knid,vlan,vxlan,flat
    tenant_network_types=kaloom_knid
    [ml2_type_vlan]
@@ -174,31 +161,31 @@ $ sudo systemctl stop neutron-server
    #network_vlan_ranges = provider:100:4094 
 ```
 
-1. In `/etc/neutron/neutron.conf` update/add the following
+6. In `/etc/neutron/neutron.conf` update/add the following
    variable
 ```ini
    #use kaloom_l3 instead of router
    service_plugins=qos,kaloom_l3,metering,trunk
 ```
 
-1. Update the neutron database
+7. Update the neutron database
 ```bash
    $ sudo neutron-kaloom-db-manage upgrade head
 ```
 
-1. Restart neutron server to pick up the changes
+8. Restart neutron server to pick up the changes
 ```bash
    $ sudo systemctl start neutron-server
 ```
 
-1. Enable HugePage on Flavour that will be used for VM running on KVS compute node
+9. Enable HugePage on Flavour that will be used for VM running on KVS compute node
 ```bash
    $ sudo su
    $ source /root/keystonerc_admin
    $ openstack flavor create m1.small_hugepage --disk 20 --ram 2048 --property hw:mem_page_size=large
 ```
 
-1. Once KVS compute nodes are setup, Cleanup down Open vSwitch agents on database.
+10. Once KVS compute nodes are setup, Cleanup down Open vSwitch agents on database.
 ```bash
     $ sudo su
     $ source /root/keystonerc_admin
@@ -218,7 +205,7 @@ $ sudo systemctl stop neutron-server
    bridge_mappings = provider:br-provider
 ```
 
-1. Create the provider bridge
+2. Create the provider bridge
 ```bash
    $ sudo ovs-vsctl add-br br-provider
    $ sudo ovs-vsctl add-port br-provider PROVIDER_INTERFACE
@@ -231,28 +218,28 @@ $ sudo systemctl stop neutron-server
    $sysctl -w vm.nr_hugepages=4096
 ```
 
-1. Enable DPDK in OVS
+2. Enable DPDK in OVS
 ```bash
    $ovs-vsctl --no-wait set Open_vSwitch . other_config:dpdk-init=true
 ```
 
-1. Edit `/etc/libvirt/qemu.conf` to grant access to vhost-user sockets.
+3. Edit `/etc/libvirt/qemu.conf` to grant access to vhost-user sockets.
 ```ini
    group = "hugetlbfs"
 ```
 
-1. Restart services
+4. Restart services
 ```bash
    $systemctl restart openvswitch
    $systemctl restart libvirtd
 ```
 
-1. Create the provider bridge
+5. Create the provider bridge
 ```bash
    $ ovs-vsctl add-br br-provider -- set bridge br-provider datapath_type=netdev
 ```
 
-1. Add dpdk interface to provider bridge
+6. Add dpdk interface to provider bridge
 ```bash
    $modprobe vfio-pci
    $ifdown p3p1
@@ -260,7 +247,7 @@ $ sudo systemctl stop neutron-server
    $ovs-vsctl add-port br-provider p3p1 -- set Interface p3p1 type=dpdk options:dpdk-devargs=0000:04:00.0
 ``` 
 
-1. Edit `/etc/neutron/plugins/ml2/openvswitch_agent.ini`
+7. Edit `/etc/neutron/plugins/ml2/openvswitch_agent.ini`
 ```ini
    [ovs]
    bridge_mappings = provider:br-provider
@@ -268,7 +255,7 @@ $ sudo systemctl stop neutron-server
    vhostuser_socket_dir = /tmp
 ```
 
-1. Restart service
+8. Restart service
 ```bash
    $systemctl restart neutron-openvswitch-agent
 ```
@@ -277,27 +264,30 @@ $ sudo systemctl stop neutron-server
 
 1. Make sure that KVS is configured and running.
 ```bash
-   $ sudo /opt/kaloom/bin/kssctl port list
+   $ sudo /opt/kaloom/bin/kvsctl port list
 ```
 
-1. Increase Hugepage available for VMs
+2. Increase Hugepage available for VMs
 ```bash
    $ sudo sysctl -w vm.nr_hugepages=4096
 ```
 
-1. Install `kaloom_kvs_agent` package on the compute node and 
-   restart nova-compute.
+3. Install `kaloom_kvs_agent` package on the compute node, edit `/etc/nova/nova.conf` 
+```ini
+compute_driver=libvirt_kaloom.LibvirtDriverKaloom
+```
+and restart nova-compute.
 ```bash
    $ sudo systemctl restart openstack-nova-compute
 ```
 
-1. Stop Open vSwitch agent if already running
+4. Stop Open vSwitch agent if already running
 ```bash
     $ sudo systemctl stop neutron-openvswitch-agent
     $ sudo systemctl disable neutron-openvswitch-agent
 ```
 
-1. Do following in case of change in default setting of `vhostuser_socket_dir` in `/etc/neutron/plugins/ml2/ml2_conf_kaloom.ini`
+5. Do following in case of change in default setting of `vhostuser_socket_dir` in `/etc/neutron/plugins/ml2/ml2_conf_kaloom.ini`
 ```bash
    $ DIR="/test"
    $ USER=`python -c "from kaloom_kvs_agent.common import utils; print utils.get_qemu_process_user()"`
@@ -308,13 +298,13 @@ $ sudo systemctl stop neutron-server
    $ restorecon -Rv $DIR
 ```
 
-1. Start the Kaloom agent
+6. Start the Kaloom agent
 ```bash
    $ sudo systemctl start neutron-kaloom-agent
    $ sudo systemctl enable neutron-kaloom-agent
 ```
 
-1. Agent LOG can be checked as:
+7. Agent LOG can be checked as:
 ```bash
    $ tail -f /var/log/neutron/neutron-kaloom-agent.log
 ```
@@ -338,67 +328,67 @@ $ sudo systemctl stop neutron-server
    }
 ```
 
-1. Restart Apache server
+2. Restart Apache server
 ```bash
    $ sudo systemctl restart httpd
 ```
 
 ## OVS Network Nodes
-In case of `service_plugins=router,..` in `/etc/neutron/neutron.conf`, do following:
-1. Edit /etc/neutron/l3_agent.ini and update
+1. In case of `service_plugins=router,..` in `/etc/neutron/neutron.conf`, do following
+Edit /etc/neutron/l3_agent.ini and update
 ```ini
    interface_driver = neutron.agent.linux.interface.OVSInterfaceDriver
    #external_network_bridge =
    #gateway_external_network_id = 
 ```
 
-1. Restart L3 agent
+Restart L3 agent
 ```bash
    $ systemctl restart neutron-l3-agent
 ```
 
-In case of `service_plugins=kaloom_l3,..` in `/etc/neutron/neutron.conf`
+2. In case of `service_plugins=kaloom_l3,..` in `/etc/neutron/neutron.conf`
 ```bash
    $systemctl stop neutron-l3-agent
    $systemctl disable neutron-l3-agent
 ```
-1. Edit `/etc/neutron/dhcp_agent.ini` and update
+3. Edit `/etc/neutron/dhcp_agent.ini` and update
 ```bash
     force_metadata = True
 ```
 
-1. Restart DHCP agent
+4. Restart DHCP agent
 ```bash
    $ sudo systemctl restart neutron-dhcp-agent
 ```
 
 ## KVS Network Nodes
-In case of `service_plugins=router,..` in `/etc/neutron/neutron.conf`, do following:
-1. Edit /etc/neutron/l3_agent.ini and update
+1. In case of `service_plugins=router,..` in `/etc/neutron/neutron.conf`, do following:
+Edit /etc/neutron/l3_agent.ini and update
 ```ini
    interface_driver = kaloom_kvs_agent.interface.KVSInterfaceDriver
    #external_network_bridge =
    #gateway_external_network_id = 
 ```
 
-1. Restart L3 agent
+Restart L3 agent
 ```bash
    $ systemctl restart neutron-l3-agent
 ```
 
-In case of `service_plugins=kaloom_l3,..` in `/etc/neutron/neutron.conf`
+2. In case of `service_plugins=kaloom_l3,..` in `/etc/neutron/neutron.conf`
 ```bash
    $systemctl stop neutron-l3-agent
    $systemctl disable neutron-l3-agent
 ```
 
-1. Edit `/etc/neutron/dhcp_agent.ini` and update
+3. Edit `/etc/neutron/dhcp_agent.ini` and update
 ```bash
     interface_driver = kaloom_kvs_agent.interface.KVSInterfaceDriver
     force_metadata = True 
 ```
 
-1. Restart DHCP agent
+4. Restart DHCP agent
 ```bash
    $ sudo systemctl restart neutron-dhcp-agent
 ```
@@ -467,3 +457,4 @@ $ VM_FLOAT_IP=$(openstack floating ip list --port $VM_PORT -f value -c "Floating
 ##ip netns exec $router_ns iptables -L -t nat -n -v  # shows SNAT, DNAT rules per floating ip.
 $ ip netns exec ext-gateway ping $VM_FLOAT_IP  ##pings
 ```
+

@@ -1,0 +1,9 @@
+.gradle/
+build/
+.project
+.settings/
+.vscode/
+*.pyc
+.gogradle/
+.inner-gradle/
+docker/openstack-neutron-server-kaloom/*.rpm

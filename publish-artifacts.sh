@@ -18,10 +18,13 @@
 # REGISTRY_PASS: Password for containers registries
 
 readonly VERSION=$(ls build/networking_kaloom/dist/ | grep noarch | cut -d'-' -f2)
-readonly BRANCH=$(git rev-parse --abbrev-ref HEAD)
+readonly BRANCH=$(git name-rev --name-only HEAD  | sed 's#remotes/origin/##g')
 
 set_binary_repos() {
-	if [[ ${BRANCH} == "master" ]] && [[ ${VERSION} =~ ".dev" ]]; then
+	if [[ -z ${VERSION} ]]; then
+                echo "Error: Unable to extract version of built RPMs"
+                exit 1
+	elif [[ ${BRANCH} == "master" ]] && [[ ${VERSION} =~ ".dev" ]]; then
 		RPMS_REPO=${RPMS_SNAPSHOTS}
 		REGISTRY_REPO=${REGISTRY_SNAPSHOTS}
 	elif [[ ${BRANCH} != "master" ]] && [[ ${VERSION} =~ ".dev" ]]; then
@@ -31,10 +34,10 @@ set_binary_repos() {
 		RPMS_REPO=${RPMS_RELEASE}
 		REGISTRY_REPO=${REGISTRY_RELEASE}
 	else
-		echo "Error: Unable to extract version of built RPMs"
+		echo "Error: Unable to determine binary repositories"
 		exit 1
 	fi
-	echo "INFO: Binary repositories used: $RPMS_URL/$RPMS_REPO $REGISTRY_REPO"
+	echo "INFO: Binary repositories used from branch $BRANCH and version $VERSION are: $RPMS_URL/$RPMS_REPO $REGISTRY_REPO"
 }
 
 publish_rpms() {

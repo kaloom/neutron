@@ -59,8 +59,9 @@ publish_rpms() {
 }
 
 publish_containers() {
-	docker tag rhosp12/openstack-neutron-server-kaloom-plugin:${VERSION} ${REGISTRY_REPO}/rhosp13/openstack-neutron-server-kaloom-plugin:${VERSION}
-	echo "$REGISTRY_PASS" | docker login -u "$REGISTRY_USER" --password-stdin ${REGISTRY_REPO}
+	docker images | grep rhos
+	docker tag rhosp13/openstack-neutron-server-kaloom-plugin:${VERSION} ${REGISTRY_REPO}/rhosp13/openstack-neutron-server-kaloom-plugin:${VERSION}
+	docker login -u "$REGISTRY_USER" -p "$REGISTRY_PASS" "${REGISTRY_REPO}"
 	echo "INFO: Pushing container: ${REGISTRY_REPO}/rhosp13/openstack-neutron-server-kaloom-plugin:${VERSION}"
 	docker push ${REGISTRY_REPO}/rhosp13/openstack-neutron-server-kaloom-plugin:${VERSION}
 }

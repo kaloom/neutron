@@ -1,0 +1,14 @@
+stages:
+- build
+
+Build Neutron RPMs and Image:
+  stage: build
+  tags:
+    - RHEL
+  script:
+    - sh docker-build.sh
+    - sh build-containers.sh
+    - sh publish-artifacts.sh
+  artifacts:
+    expire_in: 3 days
+

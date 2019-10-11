@@ -28,4 +28,7 @@ docker build --no-cache=true docker/openstack-neutron-server-kaloom/ \
     --build-arg VCS_REF=$(git rev-parse HEAD) \
     --build-arg KALOOM_VERSION=${NEUTRON_KALOOM_VERSION} \
     --build-arg KALOOM_RELEASE=${NEUTRON_KALOOM_RELEASE} \
+    --build-arg RPM_USER=${RPM_REPO_USER} \
+    --build-arg RPM_TOKEN=${RPM_REPO_TOKEN} \
+    --build-arg RPM_URL=$(curl -u ${RPM_REPO_USER}:${RPM_REPO_TOKEN} --silent "https://api.github.com/repos/kaloom/neutron/releases" | grep -Po '"url": "\K.*?(?=")' | grep assets | tail -1) \
     -t rhosp13/openstack-neutron-server-kaloom-plugin:${RPM_VERSION}

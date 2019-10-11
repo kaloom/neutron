@@ -16,3 +16,22 @@ deploy:
   skip_cleanup: true
   on:
     tags: true
+
+before_deploy:
+  - source ./snapshot-version.sh
+
+deploy:
+  provider: releases
+  tag_name: v$SNAPSHOT_VERSION
+  target_commitish: $TRAVIS_COMMIT
+  name: v$SNAPSHOT_VERSION
+  api_key: $GITHUB_OAUTH_TOKEN
+  file_glob: true
+  file: 
+    - build/**/networking_kaloom*.noarch.rpm
+    - build/**/kaloom_kvs_agent*.noarch.rpm
+  skip_cleanup: true
+  draft: true
+  prerelease: true
+  on:
+    branch: master

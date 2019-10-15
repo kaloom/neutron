@@ -178,7 +178,7 @@ class KaloomL3Driver(object):
                                                    router_info['name'])
             l2_node_id = router_info['nw_name']
             try:
-                invoker = utils.Invoker()
+                attachFabricOperation = utils.Invoker()
                 LOG.info('Trying to add subnet %s to vfabric router %s -- network %s', router_info['subnet_id'], router_name, l2_node_id)
                 router_inf_info = self.vfabric.get_router_interface_info(router_name, l2_node_id)
                 vfabric_router_id = router_inf_info['node_id']
@@ -190,7 +190,7 @@ class KaloomL3Driver(object):
                 ## first subnet request ? absence of router--l2_node interface, first create interface.
                 if tp_interface_name is None:
                     command = utils.Command(utils.vfabric_operation_reversible(self.vfabric, 'attach_router', 'detach_router'), vfabric_router_id, l2_node_id)
-                    tp_interface_name = invoker.execute(command)
+                    tp_interface_name = attachFabricOperation.execute(command)
 
                 #interface_info common to both add and delete.
                 interface_info={}
@@ -219,7 +219,7 @@ class KaloomL3Driver(object):
                 msg = (_('Failed to add subnet %s (IP %s) to vfabric router '
                     '%s -- network %s, err:%s') % (router_info['subnet_id'], router_info['ip_address'], router_name, l2_node_id, e))
                 LOG.error(msg)
-                invoker.undo()
+                attachFabricOperation.undo()
                 raise kaloom_exc.KaloomServicePluginRpcError(msg=msg)
 
     def remove_router_interface(self, context, router_info):

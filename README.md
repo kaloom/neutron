@@ -66,6 +66,7 @@ $ docker run --rm  -it -v `pwd`:/opt/neutron kaloom/build-neutron:1.0.0 bash
 Run the tests by executing the following command
 
 ```bash
+$ cd /opt/neutron
 $ nosetests networking_kaloom/tests
 ```
 

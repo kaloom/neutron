@@ -161,12 +161,12 @@ class KaloomL3SyncWorker(worker.BaseWorker):
             # Sync (vfabric.add_router_interface) can't go in parallel with router operations (on same router)
             # to avoid race condition of creating router--network link.
             # parallelism of router operations (on different router)
-            # read (s) lock on "the router" during transaction.
+            # write (x) lock on "the router" during transaction (supports multiple sync_router_interfaces operations)
             db_session = db_api.get_writer_session()
             with db_session.begin(subtransactions=True):
                 try:
                     caller_msg = 'l3_sync_interface on router id=%s name=%s' % (r['id'] , r['name'])
-                    kaloom_db.get_Lock(db_session, r['id'], read=True, caller_msg = caller_msg)
+                    kaloom_db.get_Lock(db_session, r['id'], read=False, caller_msg = caller_msg)
                 except Exception as e:
                     #no record (router deleted): nothing to sync for the router
                     #lock timeout 
@@ -542,5 +542,5 @@ class KaloomL3ServicePlugin(service_base.ServicePluginBase,
                 self.driver.remove_router_interface(context, router_info)
                 return router_ifc_to_del
             except Exception as e:
-                msg = "remove_router_interface failed in vfabric: %s" % (e)
+                msg = "remove_router_interface (router %s -- IP %s subnet_id %s) failed in vfabric: %s" % (router['name'], ip_address, subnet['id'], e)
                 LOG.error(msg)

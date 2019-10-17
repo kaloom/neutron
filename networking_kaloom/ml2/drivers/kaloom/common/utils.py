@@ -18,6 +18,7 @@ from oslo_db import exception as db_exc
 from eventlet import greenthread
 from oslo_log import log
 from xml.sax.saxutils import escape
+import netaddr
 
 LOG = log.getLogger(__name__)
 
@@ -91,3 +92,54 @@ def tp_operation_unlock(host, network_id):
     kaloom_db.delete_tp_operation(host, network_id)
     LOG.debug('tp_operation_unlock for host=%s, network_id=%s', host, network_id)
 
+def get_overlapped_subnet(given_ip_cidr, existing_ip_cidrs):
+    given_net = netaddr.IPNetwork(given_ip_cidr)
+    overlapped_ip_cidrs=[]
+    for ip_cidr in existing_ip_cidrs:
+        existing_net = netaddr.IPNetwork(ip_cidr)
+        if given_net in existing_net or existing_net in given_net:
+            overlapped_ip_cidrs.append(ip_cidr)
+    return overlapped_ip_cidrs
+
+#command pattern for reversible operations
+# receiver
+class vfabric_operation_reversible:
+    def __init__(self, vfabric, do_operation, undo_operation):
+        self.vfabric = vfabric
+        self.do_operation = do_operation
+        self.undo_operation = undo_operation
+
+    def execute(self, *args, **kwargs):
+        method = getattr(self.vfabric, self.do_operation)
+        return method(*args, **kwargs)
+
+    def undo(self, *args, **kwargs):
+        method = getattr(self.vfabric, self.undo_operation)
+        return method(*args, **kwargs)
+
+# command
+class Command:
+    def __init__(self, receiver, *args, **kwargs):
+        self.receiver = receiver
+        self.args = args
+        self.kwargs = kwargs
+    def execute(self):
+        return self.receiver.execute(*self.args, **self.kwargs)
+    def undo(self):
+        return self.receiver.undo(*self.args, **self.kwargs)
+
+# invoker
+class Invoker:
+    def __init__(self):
+        self.history = []
+    def execute(self, command):
+        resp = command.execute()
+        self.history.append(command)
+        return resp
+    def undo(self):
+        while len(self.history) > 0:
+           command = self.history.pop()
+           try:
+              command.undo()
+           except:
+              pass

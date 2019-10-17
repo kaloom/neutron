@@ -57,6 +57,7 @@ TAG_VIP_IPV4 = "{" + VIP_NS + "}" + "ipv4"
 TAG_VIP_IPV6 = "{" + VIP_NS + "}" + "ipv6"
 TAG_VIP_ADDRESS = "{" + VIP_NS + "}" + "address"
 TAG_VIP_IP = "{" + VIP_NS + "}" + "ip"
+TAG_VIP_PREFIX_LENGTH = "{" + VIP_NS + "}" + "prefix-length"
 TAG_NT_TP = "{" + NT_NS + "}" + "termination-point"
 TAG_NT_SUPPORTING_TP = "{" + NT_NS + "}" + "supporting-termination-point"
 TAG_NT_NETWORK_REF = "{" + NT_NS + "}" + "network-ref"
@@ -1057,7 +1058,7 @@ class KaloomNetconf(object):
         req = L3_command_dict["GET_ROUTER_INTERFACE_INFO"] % {'router_name': router_name}
         resp = self._exec_netconf_cmd(req)
         LOG.debug(resp)
-        router_inf_info={'node_id': None, 'interface': None, 'ip_addresses': []}
+        router_inf_info={'node_id': None, 'interface': None, 'cidrs': []}
 
         xml_root = objectify.fromstring(resp).getroottree()
         node = xml_root.find('//' + TAG_NODE)
@@ -1074,7 +1075,7 @@ class KaloomNetconf(object):
               router_inf_info['interface'] = nt_tp.find(TAG_L3T_L3_TP_ATTR).find(TAG_VL3T_IFNAME).text
               break
         #now find IPs for the router_interface
-        if router_inf_info['interface']:  
+        if router_inf_info['interface']:
            interfaces = node.find(TAG_VIF_INTERFACES).findall(TAG_VIF_INTERFACE)
            for interface in interfaces:
               if router_inf_info['interface'] == interface.find(TAG_VIF_NAME).text:
@@ -1082,7 +1083,9 @@ class KaloomNetconf(object):
                 interface_ipv6_addresses = interface.find(TAG_VIP_IPV6).findall(TAG_VIP_ADDRESS)
                 for address in interface_ipv4_addresses + interface_ipv6_addresses:
                   ip = address.find(TAG_VIP_IP).text
-                  router_inf_info['ip_addresses'].append(ip)
+                  prefix_length = address.find(TAG_VIP_PREFIX_LENGTH).text
+                  cidr = '%s/%s' % (ip, prefix_length)
+                  router_inf_info['cidrs'].append(cidr)
                 break
         return router_inf_info
 

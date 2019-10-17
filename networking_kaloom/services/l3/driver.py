@@ -155,6 +155,19 @@ class KaloomL3Driver(object):
                 LOG.error(msg)
                 raise kaloom_exc.KaloomServicePluginRpcError(msg=msg)
 
+    def _delete_stale_ipaddress_from_interface(self, interface_info, given_ip_cidr, existing_ip_cidrs):
+        overlapped_subnet_ip_cidrs = utils.get_overlapped_subnet(given_ip_cidr, existing_ip_cidrs )
+        overlapped_subnet_ip_cidr = overlapped_subnet_ip_cidrs[0] if len(overlapped_subnet_ip_cidrs) > 0 else None
+        if overlapped_subnet_ip_cidr is not None:
+            if given_ip_cidr == overlapped_subnet_ip_cidr:
+                #already exists exact ip/subnet in vfabric, don't delete, reuse
+                return False
+            else:
+                #clean overlap now: by calling delete_ipaddress_to_interface
+                interface_info['ip_address'] = overlapped_subnet_ip_cidr.split('/')[0]
+                self.vfabric.delete_ipaddress_from_interface(interface_info)
+        return True
+
     def add_router_interface(self, context, router_info):
         """In case of no router interface present for the network of subnet, creates the interface.
         Adds a subnet configuration to the router interface on Kaloom vFabric.
@@ -165,6 +178,7 @@ class KaloomL3Driver(object):
                                                    router_info['name'])
             l2_node_id = router_info['nw_name']
             try:
+                attachFabricOperation = utils.Invoker()
                 LOG.info('Trying to add subnet %s to vfabric router %s -- network %s', router_info['subnet_id'], router_name, l2_node_id)
                 router_inf_info = self.vfabric.get_router_interface_info(router_name, l2_node_id)
                 vfabric_router_id = router_inf_info['node_id']
@@ -175,25 +189,37 @@ class KaloomL3Driver(object):
 
                 ## first subnet request ? absence of router--l2_node interface, first create interface.
                 if tp_interface_name is None:
-                    tp_interface_name = self.vfabric.attach_router(vfabric_router_id, l2_node_id)
+                    command = utils.Command(utils.vfabric_operation_reversible(self.vfabric, 'attach_router', 'detach_router'), vfabric_router_id, l2_node_id)
+                    tp_interface_name = attachFabricOperation.execute(command)
 
-                #add_ipaddress_to_interface
+                #interface_info common to both add and delete.
                 interface_info={}
                 interface_info['router_node_id'] = vfabric_router_id
                 interface_info['interface_name'] = tp_interface_name
                 interface_info['ip_version'] = router_info['ip_version']
+                prefix_length = router_info['cidr'].split('/')[1]
+
+                #plugin.remove_router_interface left stale data on vfabric? not cleaned yet? then delete (first) or reuse.
+                #otherwise multiple IPs of same subnet would complain "That ipv4 address already exist for that router"
+                given_ip_cidr = '%s/%s' % (router_info['ip_address'], prefix_length)
+                deleted = self._delete_stale_ipaddress_from_interface(interface_info, given_ip_cidr, router_inf_info['cidrs'])
+                if not deleted:
+                    #already exists exact ip/subnet in vfabric, which is not deleted to reuse.
+                    return
+
+                #add_ipaddress_to_interface
                 interface_info['ip_address'] = router_info['ip_address']
-                interface_info['prefix_length'] = router_info['cidr'].split('/')[1]
+                interface_info['prefix_length'] = prefix_length
                 try:
                     self.vfabric.add_ipaddress_to_interface(interface_info)
                 except Exception as _e:
                     msg = "add_ipaddress_to_interface failed: %s" % (_e)
-                    self.remove_router_interface(context, router_info)
                     raise ValueError(msg)
             except Exception as e:
-                msg = (_('Failed to add subnet %s to vfabric router '
-                    '%s -- network %s, err:%s') % (router_info['subnet_id'], router_name, l2_node_id, e))
+                msg = (_('Failed to add subnet %s (IP %s) to vfabric router '
+                    '%s -- network %s, err:%s') % (router_info['subnet_id'], router_info['ip_address'], router_name, l2_node_id, e))
                 LOG.error(msg)
+                attachFabricOperation.undo()
                 raise kaloom_exc.KaloomServicePluginRpcError(msg=msg)
 
     def remove_router_interface(self, context, router_info):
@@ -210,7 +236,7 @@ class KaloomL3Driver(object):
                 router_inf_info = self.vfabric.get_router_interface_info(router_name, l2_node_id)
                 vfabric_router_id = router_inf_info['node_id']
                 tp_interface_name = router_inf_info['interface']
-                count_ip = len(router_inf_info['ip_addresses'])
+                count_ip = len(router_inf_info['cidrs'])
 
                 if vfabric_router_id is None:
                     LOG.warning('no router_interface to remove on non-existing vfabric router=%s', router_name)
@@ -220,9 +246,11 @@ class KaloomL3Driver(object):
                     LOG.warning('no router_interface to remove on router=%s', router_name)
                     return
 
-                if count_ip <= 1: #last IP subnet remained, detach router
+                router_inf_ip_addresses = [cidr.split('/')[0] for cidr in router_inf_info['cidrs']]
+                #last IP subnet remained, detach router
+                if count_ip == 0 or (count_ip == 1 and router_info['ip_address'] == router_inf_ip_addresses[0]):
                     self.vfabric.detach_router(vfabric_router_id, l2_node_id)
-                else:
+                elif router_info['ip_address'] in router_inf_ip_addresses:
                     #delete_ipaddress_from_interface
                     interface_info={}
                     interface_info['router_node_id'] = vfabric_router_id

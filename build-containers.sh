@@ -29,3 +29,12 @@ docker build --no-cache=true docker/openstack-neutron-server-kaloom/ \
     --build-arg KALOOM_VERSION=${NEUTRON_KALOOM_VERSION} \
     --build-arg KALOOM_RELEASE=${NEUTRON_KALOOM_RELEASE} \
     -t rhosp13/openstack-neutron-server-kaloom-plugin:${RPM_VERSION}
+
+cp build/networking_kaloom/dist/networking_kaloom-*.noarch.rpm docker/centos-binary-neutron-server-kaloom/
+echo "Building local container tripleoqueens/centos-binary-neutron-server-kaloom-plugin:${NEUTRON_KALOOM_VERSION}.${NEUTRON_KALOOM_RELEASE}"
+docker build --no-cache=true docker/centos-binary-neutron-server-kaloom/ \
+    --build-arg BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ') \
+    --build-arg VCS_REF=$(git rev-parse HEAD) \
+    --build-arg KALOOM_VERSION=${NEUTRON_KALOOM_VERSION} \
+    --build-arg KALOOM_RELEASE=${NEUTRON_KALOOM_RELEASE} \
+    -t tripleoqueens/centos-binary-neutron-server-kaloom-plugin:${RPM_VERSION}

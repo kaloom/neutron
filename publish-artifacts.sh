@@ -62,11 +62,16 @@ publish_rpms() {
 }
 
 publish_containers() {
-	docker images | grep rhos
+
 	docker tag rhosp13/openstack-neutron-server-kaloom-plugin:${VERSION} ${REGISTRY_REPO}/rhosp13/openstack-neutron-server-kaloom-plugin:${VERSION}
 	docker login -u "$REGISTRY_USER" -p "$REGISTRY_PASS" "${REGISTRY_REPO}"
 	echo "INFO: Pushing container: ${REGISTRY_REPO}/rhosp13/openstack-neutron-server-kaloom-plugin:${VERSION}"
 	docker push ${REGISTRY_REPO}/rhosp13/openstack-neutron-server-kaloom-plugin:${VERSION}
+
+	docker tag tripleoqueens/centos-binary-neutron-server-kaloom-plugin:${VERSION} ${REGISTRY_REPO}/tripleoqueens/centos-binary-neutron-server-kaloom-plugin:${VERSION}
+	docker login -u "$REGISTRY_USER" -p "$REGISTRY_PASS" "${REGISTRY_REPO}"
+	echo "INFO: Pushing container: ${REGISTRY_REPO}/tripleoqueens/centos-binary-neutron-server-kaloom-plugin:${VERSION}"
+	docker push ${REGISTRY_REPO}/tripleoqueens/centos-binary-neutron-server-kaloom-plugin:${VERSION}
 }
 
 main() {

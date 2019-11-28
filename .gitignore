@@ -7,3 +7,4 @@ build/
 .gogradle/
 .inner-gradle/
 docker/openstack-neutron-server-kaloom/*.rpm
+docker/centos-binary-neutron-server-kaloom/*.rpm

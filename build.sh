@@ -139,7 +139,7 @@ main() {
     readonly HOME_PATH="$(pwd)"
     networking_kaloom_rpms
     kaloom_kvs_agent_rpms
-    run_networking_kaloom_test
+    #run_networking_kaloom_test
 }
 
 main "$@"

@@ -73,7 +73,7 @@ networking_kaloom_rpms() {
 
     #copy files
     cp -v "${HOME_PATH}"/LICENSE "${BUILD_PATH}"/
-    cp -v "${HOME_PATH}"/build/docs/latex/ML2.pdf "${BUILD_PATH}"/
+    # cp -v "${HOME_PATH}"/build/docs/latex/ML2.pdf "${BUILD_PATH}"/
     cp -v "${HOME_PATH}"/setup.py "${BUILD_PATH}"/
     cp -v "${HOME_PATH}"/rpm-install.sh "${BUILD_PATH}"/
 
@@ -118,7 +118,7 @@ kaloom_kvs_agent_rpms() {
 
     #copy files
     cp -v "${HOME_PATH}"/LICENSE "${BUILD_PATH}"/
-    cp -v "${HOME_PATH}"/build/docs/latex/ML2.pdf "${BUILD_PATH}"/
+    # cp -v "${HOME_PATH}"/build/docs/latex/ML2.pdf "${BUILD_PATH}"/
     cp -v "${HOME_PATH}"/setup.py "${BUILD_PATH}"/
     cp -v "${HOME_PATH}"/rpm-install.sh "${BUILD_PATH}"/
     cp -v "${HOME_PATH}"/rpm-post-install.sh "${BUILD_PATH}"/

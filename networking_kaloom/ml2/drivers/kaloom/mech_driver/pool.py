@@ -13,7 +13,7 @@
 
 import sys
 import random
-from neutron.plugins.common import utils as plugin_utils
+from neutron_lib.plugins import utils as plugin_utils
 from networking_kaloom.ml2.drivers.kaloom.db import kaloom_db
 from networking_kaloom.ml2.drivers.kaloom.common import constants as kconst
 from oslo_config import cfg

@@ -11,7 +11,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import neutron.db.api as db_api
+import neutron_lib.db.api as db_api
 from oslo_log import log
 from neutron.db.models import l3
 from networking_kaloom.ml2.drivers.kaloom.db import kaloom_models

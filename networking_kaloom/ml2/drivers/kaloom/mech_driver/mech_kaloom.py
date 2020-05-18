@@ -35,7 +35,7 @@ from oslo_utils import uuidutils
 from neutron.objects import network as network_obj
 from neutron.db import api as db_api
 from neutron.common import rpc as common_rpc
-from neutron.common import topics
+from neutron_lib.agent import topics
 from networking_kaloom.ml2.drivers.kaloom.mech_driver import kvs_rpc
 from networking_kaloom.services.trunk import driver as kvs_trunk_driver
 from neutron_lib import worker
@@ -650,6 +650,6 @@ class KaloomKVSMechanismDriver(KaloomOVSMechanismDriver):
         self.notifier = kvs_rpc.KvsAgentNotifyAPI(topics.AGENT)
         self.endpoints = [kvs_rpc.KvsServerRpcCallback(self.notifier)]
         self.topic = a_const.TOPIC_KNID
-        self.conn = common_rpc.create_connection()
+        self.conn = common_rpc.Connection()
         self.conn.create_consumer(self.topic, self.endpoints, fanout=False)
         return self.conn.consume_in_threads()

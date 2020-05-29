@@ -17,7 +17,7 @@ import threading
 
 from neutron.tests import base
 from mock import MagicMock, patch, Mock, call, ANY
-from neutron.db import api as db_api
+from neutron_lib.db import api as db_api
 from neutron.db import db_base_plugin_common
 from neutron.db import db_base_plugin_v2
 from neutron.tests.unit.db import test_db_base_plugin_v2

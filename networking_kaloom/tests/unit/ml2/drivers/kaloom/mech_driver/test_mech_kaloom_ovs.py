@@ -12,7 +12,7 @@
 #    under the License.
 
 from neutron.tests import base
-from neutron.db import api as db_api
+from neutron_lib.db import api as db_api
 from mock import patch, call
 
 from neutron_lib import constants as nconst

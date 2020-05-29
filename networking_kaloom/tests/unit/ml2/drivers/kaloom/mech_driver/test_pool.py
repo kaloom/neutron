@@ -12,7 +12,7 @@
 #    under the License.
 
 from neutron.tests import base
-from neutron.db import api as db_api
+from neutron_lib.db import api as db_api
 
 from networking_kaloom.ml2.drivers.kaloom.mech_driver.pool import KaloomVlanPool
 from networking_kaloom.ml2.drivers.kaloom.db.kaloom_models import KaloomVlanHostMapping, KaloomKnidMapping, KaloomVlanReservation

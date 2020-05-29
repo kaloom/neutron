@@ -15,7 +15,7 @@ from neutron_lib.api.definitions import portbindings
 from oslo_config import cfg
 from oslo_log import log as logging
 
-from neutron.services.trunk import constants as trunk_consts
+from neutron_lib.services.trunk import constants as trunk_consts
 from neutron.services.trunk.drivers import base
 from networking_kaloom.ml2.drivers.kaloom.agent.common import constants as a_const
 
@@ -27,7 +27,7 @@ SUPPORTED_INTERFACES = (
 )
 
 SUPPORTED_SEGMENTATION_TYPES = (
-    trunk_consts.VLAN,
+    trunk_consts.SEGMENTATION_TYPE_VLAN,
 )
 
 class KVSDriver(base.DriverBase):

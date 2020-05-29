@@ -22,7 +22,7 @@ from neutron.api.rpc.callbacks.consumer import registry
 from neutron.api.rpc.callbacks import events
 from neutron.api.rpc.callbacks import resources
 from neutron.api.rpc.handlers import resources_rpc
-from neutron.services.trunk import constants
+from neutron_lib.services.trunk import constants
 from neutron.services.trunk.rpc import agent
 
 from kaloom_kvs_agent.common \

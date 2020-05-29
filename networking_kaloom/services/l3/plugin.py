@@ -14,7 +14,7 @@
 
 import copy
 
-from neutron.common import rpc as n_rpc
+from neutron_lib import rpc as n_rpc
 from neutron_lib.agent import topics
 from neutron_lib import constants as n_const
 from neutron_lib import context as nctx

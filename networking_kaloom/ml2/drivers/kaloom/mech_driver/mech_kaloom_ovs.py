@@ -30,9 +30,9 @@ from networking_kaloom.ml2.drivers.kaloom.common import utils
 from networking_kaloom.ml2.drivers.kaloom.agent.common import constants as a_const
 from oslo_utils import uuidutils
 from neutron.objects import network as network_obj
-from neutron.db import api as db_api
+from neutron_lib.db import api as db_api
 from random import randint
-from neutron.common import rpc as common_rpc
+from neutron_lib import rpc as common_rpc
 from neutron_lib.agent import topics
 from networking_kaloom.ml2.drivers.kaloom.mech_driver import kvs_rpc
 from networking_kaloom.services.trunk import driver as kvs_trunk_driver

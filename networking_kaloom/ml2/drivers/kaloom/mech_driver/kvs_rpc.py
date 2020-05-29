@@ -19,7 +19,7 @@ import oslo_messaging
 
 from neutron_lib.plugins import directory
 from neutron_lib import context as nctx
-from neutron.common import rpc as common_rpc
+from neutron_lib import rpc as common_rpc
 from neutron_lib.agent import topics
 from neutron import manager
 from networking_kaloom.ml2.drivers.kaloom.agent.common import constants as a_const

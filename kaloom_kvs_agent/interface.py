@@ -14,7 +14,7 @@
 
 from oslo_log import log as logging
 from neutron.agent.linux import ip_lib
-from neutron.common import exceptions
+from neutron_lib import exceptions
 from neutron.agent.linux.interface import LinuxInterfaceDriver
 from kaloom_kvs_agent \
     import kvs_net

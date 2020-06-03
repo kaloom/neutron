@@ -74,3 +74,12 @@ class KaloomKnidTypeDriver(helpers.SegmentTypeDriver):
 
     def is_partial_segment(self, segment):
         return False
+
+    def initialize_network_segment_range_support(self):
+        pass
+
+    def update_network_segment_range_allocations(self):
+        pass
+
+    def get_network_segment_ranges(self):
+        pass

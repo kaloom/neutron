@@ -17,7 +17,7 @@
 #    under the License.
 import os
 import binascii
-from os_vif.internal.command import ip as ip_lib
+from os_vif.internal import ip as ip_lib
 from oslo_concurrency import processutils
 from vif_plug_kaloom_kvs import privsep
 from vif_plug_kaloom_kvs import exception

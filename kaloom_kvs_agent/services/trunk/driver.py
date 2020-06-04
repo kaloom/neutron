@@ -123,8 +123,9 @@ class KVSTrunkSkeleton(agent.TrunkSkeleton):
 
     @local_registry.receives(local_resources.PORT_DEVICE,
                        [local_events.AFTER_DELETE])
-    def agent_port_delete(self, resource, event, trigger, context, port_id,
-                          **kwargs):
+    # def agent_port_delete(self, resource, event, trigger, context, port_id,**kwargs):
+    def agent_port_delete(self, resource, event, trigger, payload=None):
+
         """Agent informed us a VIF was removed."""
         #LOG.info("Trunk driver receives: agent port delete: port_id %s", port_id)
         #nothing to do: port_delete already deleted port and multiple attachment, anti-spoofing, static-mac. 
@@ -132,17 +133,21 @@ class KVSTrunkSkeleton(agent.TrunkSkeleton):
 
     @local_registry.receives(local_resources.PORT_DEVICE,
                        [local_events.AFTER_UPDATE])
-    def agent_port_change(self, resource, event, trigger, context,
-                          device_details, **kwargs):
+    # def agent_port_change(self, resource, event, trigger, context,device_details, **kwargs):
+    def agent_port_change(self, resource, event, trigger, payload=None):
         """The agent has informed us a port update or create."""
         # check if the port has trunk_details, if yes plumb subports
-        port_id = device_details['port_id']
-        trunk = self._tapi.get_trunk(context, port_id)
+        # port_id = device_details['port_id']
+        port_id = payload.latest_state['port_id']
+        # trunk = self._tapi.get_trunk(context, port_id)
+        trunk = self._tapi.get_trunk(payload.context, port_id)
         if trunk is not None:
             LOG.info("Trunk driver receives agent's trunk port_id %s event %s", port_id, event)
             if len(trunk.sub_ports)>0:
                 #use existing function to handle subports
-                self.handle_subports(context,'',trunk.sub_ports, events.CREATED)
+                # self.handle_subports(context,'',trunk.sub_ports, events.CREATED)
+                self.handle_subports(payload.context, '',
+                                     trunk.sub_ports, events.CREATED)
 
     def handle_subports(self, context, resource_type, subports, event_type):
         # Subports are always created with the same trunk_id and there is

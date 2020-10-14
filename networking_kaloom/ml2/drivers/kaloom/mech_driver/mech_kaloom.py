@@ -552,7 +552,7 @@ class KaloomOVSMechanismDriver(OpenvswitchMechanismDriver):
             knid = self.vfabric.create_l2_network(nw_name, gui_nw_name, kconst.DEFAULT_VLAN_ID).get('kaloom_knid')
         except Exception as e:
             ##duplicate should not raise error (TYPE_KNID is used by both kaloom_ovs and kaloom_kvs mech driver)
-            if "unique duplicate constraint" in str(e):
+            if eval(str(e))['error-tag'] == 'data-exists':
                return
             else:
                LOG.error("errors: %s", e)

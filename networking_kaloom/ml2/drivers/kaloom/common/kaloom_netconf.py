@@ -1026,7 +1026,7 @@ class KaloomNetconf(object):
                 return
         except AttributeError:
             LOG.warning('session-id: %s, msg-reply: %s', self.netconf_session_id, resp)
-            raise ValueError(resp_xml['rpc-error']['error-message'])
+            raise ValueError({'error-tag': resp_xml['rpc-error']['error-tag'], 'error-message': resp_xml['rpc-error']['error-message']})
 
     def list_router_name_id(self):
         req = L3_command_dict["LIST_ROUTER"]

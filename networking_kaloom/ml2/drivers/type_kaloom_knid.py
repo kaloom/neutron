@@ -43,7 +43,7 @@ class KaloomKnidTypeDriver(helpers.SegmentTypeDriver):
     def validate_provider_segment(self, segment):
         return super(KaloomKnidTypeDriver, self).validate_provider_segment(segment)
 
-    def reserve_provider_segment(self, context, segment):
+    def reserve_provider_segment(self, context, segment, filters=None):
         # no need of local lookup table for knid, depends on vfabric.
         # set to 0. It will be updated to knid once network created in vFabric.
         segmentation_id = 0
@@ -54,7 +54,7 @@ class KaloomKnidTypeDriver(helpers.SegmentTypeDriver):
         LOG.debug("Reserved kaloom provider segment with segmentation ID %d " % segmentation_id)
         return ret
 
-    def allocate_tenant_segment(self, context):
+    def allocate_tenant_segment(self, context, filters=None):
         # no need of local lookup table for knid, depends on vfabric.
         # set to 0. It will be updated to knid once network created in vFabric.
         segmentation_id = 0
@@ -74,3 +74,12 @@ class KaloomKnidTypeDriver(helpers.SegmentTypeDriver):
 
     def is_partial_segment(self, segment):
         return False
+
+    def initialize_network_segment_range_support(self):
+        pass
+
+    def update_network_segment_range_allocations(self):
+        pass
+
+    def get_network_segment_ranges(self):
+        pass

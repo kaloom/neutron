@@ -19,7 +19,7 @@ from lxml import objectify
 
 from neutron_lib import constants as n_const
 from neutron.agent import rpc as agent_rpc
-from neutron.common import rpc as common_rpc
+from neutron_lib import rpc as common_rpc
 from oslo_log import log
 import oslo_messaging
 

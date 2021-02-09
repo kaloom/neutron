@@ -26,7 +26,7 @@ from neutron_lib import constants
 from neutron.agent.l3 import namespaces
 from neutron.agent.linux import bridge_lib
 from neutron_lib import context as _context
-from neutron.common import topics
+from neutron_lib.agent import topics
 from neutron.api.rpc.handlers import securitygroups_rpc as sg_rpc
 from neutron.agent.linux import ip_lib
 from neutron.common import config as common_config

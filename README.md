@@ -61,7 +61,7 @@ $ sudo neutron-kaloom-agent \
 In order to test or troubleshoot one needs to launch the development container in persistent mode:
 
 ```bash
-$ docker run --rm  -it -v `pwd`:/opt/neutron kaloom/build-neutron-train:1.0.0 bash
+$ docker run --rm  -it -v `pwd`:/opt/neutron kaloom/build-neutron:2.0.0 bash
 ```
 
 Run the tests by executing the following command

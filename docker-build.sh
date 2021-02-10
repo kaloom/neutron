@@ -14,5 +14,8 @@
 
 # wrapper script to build neutron plugin in build container
 
+# source for kaloom/docs-neutron https://github.com/kaloom/docs-neutron
+# source for kaloom/build-neutron https://github.com/kaloom/build-neutron
+
 docker run --rm -u $(id -u ${USER}):$(id -g ${USER}) -v `pwd`:/opt/neutron -w /opt/neutron/docs kaloom/docs-neutron:1.0.0 make clean html htmlhelp latexpdf man linkcheck
-docker run --rm -u $(id -u ${USER}):$(id -g ${USER}) -v `pwd`:/opt/neutron kaloom/build-neutron-train:1.0.0
+docker run --rm -u $(id -u ${USER}):$(id -g ${USER}) -v `pwd`:/opt/neutron kaloom/build-neutron:2.0.0
